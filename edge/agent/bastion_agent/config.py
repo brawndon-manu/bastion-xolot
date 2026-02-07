@@ -6,4 +6,4 @@ def enforcement_allowed():
     if MONITOR_ONLY:
         return False
     if DRY_RUNa:
-        return False
+        return False # test
