@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bastion-agent"
+version = "0.1.0"
+description = "Bastión Xólot edge detection agent — runs on Raspberry Pi gateway"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.27",        # async HTTP client for posting events to backend
+    "watchdog>=4.0",      # filesystem watcher for DNS log tailing
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+
+[project.scripts]
+bastion-agent = "bastion_agent.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["bastion_agent*"]
