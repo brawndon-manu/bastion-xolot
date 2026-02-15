@@ -1,0 +1,60 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Device",
+  "description": "Network device discovered by the Bastión Xólot edge agent",
+  "type": "object",
+  "required": ["mac_address", "ip_address", "first_seen", "last_seen"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Server-assigned unique identifier"
+    },
+    "mac_address": {
+      "type": "string",
+      "pattern": "^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$",
+      "description": "Hardware address — primary device identifier"
+    },
+    "ip_address": {
+      "type": "string",
+      "format": "ipv4",
+      "description": "Most recently observed IP address"
+    },
+    "hostname": {
+      "type": ["string", "null"],
+      "description": "Hostname from DHCP or mDNS, if available"
+    },
+    "vendor": {
+      "type": ["string", "null"],
+      "description": "Manufacturer derived from MAC OUI prefix"
+    },
+    "first_seen": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the device was first observed on the network"
+    },
+    "last_seen": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Most recent observation timestamp"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["normal", "suspicious", "quarantined", "trusted"],
+      "default": "normal",
+      "description": "Current security status of the device"
+    },
+    "risk_score": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100,
+      "default": 0,
+      "description": "Calculated risk score (0 = safe, 100 = critical)"
+    },
+    "user_label": {
+      "type": ["string", "null"],
+      "description": "User-assigned friendly name (e.g. 'Front desk printer')"
+    }
+  },
+  "additionalProperties": false
+}
