@@ -1,0 +1,54 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "BastionEvent",
+  "description": "Unified event schema for all Bastión Xólot detection events emitted by the edge agent",
+  "type": "object",
+  "required": ["id", "type", "timestamp", "source"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique event identifier"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "device_seen",
+        "dns_blocked",
+        "dns_query",
+        "flow_summary",
+        "anomaly_detected",
+        "enforcement_action"
+      ],
+      "description": "Category of detection event"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 timestamp when the event occurred"
+    },
+    "source": {
+      "type": "string",
+      "description": "Detection module that generated this event (e.g. discovery, dns_monitor)"
+    },
+    "device_id": {
+      "type": "string",
+      "description": "MAC address of the associated device, if applicable"
+    },
+    "data": {
+      "type": "object",
+      "description": "Event-specific payload — varies by event type",
+      "additionalProperties": true
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Additional context (agent version, gateway hostname, etc.)",
+      "properties": {
+        "agent_version": { "type": "string" },
+        "gateway_hostname": { "type": "string" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}
