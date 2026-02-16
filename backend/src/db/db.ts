@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 import { config } from "../config";
 
-let db: Database.Database;
+export let db: Database.Database;
 
 /**
  * Initializes the database connection
