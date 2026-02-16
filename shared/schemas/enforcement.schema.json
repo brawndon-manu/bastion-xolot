@@ -1,0 +1,68 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "EnforcementAction",
+  "description": "Network enforcement action taken or recorded by Bastión Xólot",
+  "type": "object",
+  "required": ["id", "device_id", "action", "reason", "initiated_by", "created_at"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique enforcement action identifier"
+    },
+    "device_id": {
+      "type": "string",
+      "description": "Device targeted by this action"
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "quarantine",
+        "unquarantine",
+        "block_destination",
+        "unblock_destination",
+        "monitor_only"
+      ],
+      "description": "Type of enforcement action"
+    },
+    "reason": {
+      "type": "string",
+      "description": "Why this action was taken — references alert or user decision"
+    },
+    "initiated_by": {
+      "type": "string",
+      "enum": ["system", "user"],
+      "description": "Whether the action was triggered automatically or by a human"
+    },
+    "alert_id": {
+      "type": ["string", "null"],
+      "description": "Alert that triggered this enforcement, if system-initiated"
+    },
+    "target": {
+      "type": ["object", "null"],
+      "description": "Specific destination for block/unblock actions",
+      "properties": {
+        "domain": { "type": "string" },
+        "ip": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "status": {
+      "type": "string",
+      "enum": ["applied", "rolled_back", "failed"],
+      "default": "applied",
+      "description": "Current state of the enforcement action"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the action was applied"
+    },
+    "rolled_back_at": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "When the action was reversed, if applicable"
+    }
+  },
+  "additionalProperties": false
+}
