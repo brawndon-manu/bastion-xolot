@@ -16,3 +16,6 @@ backend/data/
 
 # Logs
 *.log
+# Python bytecode
+*.pyc
+__pycache__/
