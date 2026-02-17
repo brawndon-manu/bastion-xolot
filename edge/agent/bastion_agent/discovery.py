@@ -188,8 +188,9 @@ def scan_network() -> list[dict]:
                 confidence=1.0,
                 related_event_ids=[event["id"]],
             )
-            enqueue_and_dispatch(alert)
-            events.append(alert)
+            # For phase 1: only queue events. Alerrs will be sent via backend later
+            # enqueue_and_dispatch(alert)
+            # events.append(alert)
         else:
             logger.debug("Known device seen: %s (%s)", mac, ip)
 
