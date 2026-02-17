@@ -1,0 +1,85 @@
+{
+  "$id": "bastion://schemas/enforcement_transaction.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Bastion Enforcement Transaction",
+  "type": "object",
+  "required": ["tx_id", "ts", "device", "transition", "gates", "plan", "result"],
+  "properties": {
+    "tx_id": { "type": "string", "description": "Unique transaction id (uuid recommended)." },
+    "ts": { "type": "string", "description": "ISO-8601 timestamp." },
+
+    "device": {
+      "type": "object",
+      "required": ["mac"],
+      "properties": {
+        "mac": { "type": "string", "description": "Primary key for enforcement." },
+        "ip_last_seen": { "type": ["string", "null"] },
+        "iface": { "type": ["string", "null"] },
+        "label": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+
+    "transition": {
+      "type": "object",
+      "required": ["from", "to", "reason", "actor"],
+      "properties": {
+        "from": { "type": "string", "enum": ["NONE", "SOFT", "HARD"] },
+        "to": { "type": "string", "enum": ["NONE", "SOFT", "HARD"] },
+        "reason": { "type": "string" },
+        "actor": { "type": "string", "description": "manual | dns_monitor | suricata | backend | etc." }
+      },
+      "additionalProperties": false
+    },
+
+    "gates": {
+      "type": "object",
+      "required": ["monitor_only", "dry_run", "allow_enforcement"],
+      "properties": {
+        "monitor_only": { "type": "boolean" },
+        "dry_run": { "type": "boolean" },
+        "allow_enforcement": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+
+    "plan": {
+      "type": "object",
+      "required": ["nft"],
+      "properties": {
+        "nft": {
+          "type": "object",
+          "required": ["ops"],
+          "properties": {
+            "table": { "type": "string", "default": "inet bastion" },
+            "ops": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["op", "mac"],
+                "properties": {
+                  "op": { "type": "string", "enum": ["ADD_SOFT", "DEL_SOFT", "ADD_HARD", "DEL_HARD"] },
+                  "mac": { "type": "string" }
+                },
+                "additionalProperties": false
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "result": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": { "type": "string", "enum": ["PLANNED_ONLY", "EXECUTED", "FAILED"] },
+        "error": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
