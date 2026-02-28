@@ -17,9 +17,12 @@ import { alertsRouter } from "./routes/alerts";
 
 import { initDatabase } from "./db/db";
 
+import { devicesRouter } from "./routes/devices";
+
 initDatabase();
 const app = express();
 app.use(express.json());
+app.use("/devices", devicesRouter);
 
 /**
  * Register API Routes
@@ -27,6 +30,15 @@ app.use(express.json());
  */
 app.use("/events", eventsRouter);
 app.use("/alerts", alertsRouter);
+
+/**
+ * Global error handler
+ * Prevents backened crash and returns structured error
+ */
+app.use((err: any, req: any, res: any, next: any) => {
+    console.error("Unhandle server error:", err);
+    res.status(500).json({ error: "Internal server error" });
+}); 
 
 /**
  * Health check endpoint
@@ -43,8 +55,9 @@ initWebSocket(server);
 
 // Start listening on configured port
 server.listen(config.API_PORT, () => {
+    console.log("=====================================");
     console.log(`Running in: ${config.NODE_ENV}`);
     console.log(`Database path: ${config.DB_PATH}`);
     console.log(`API port: ${config.API_PORT}`);
-    console.log("Realtime WebSocket ready");
+    console.log("=====================================");
 })
