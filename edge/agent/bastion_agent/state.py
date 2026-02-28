@@ -36,7 +36,7 @@ def _normalize_mac(mac: str) -> str:
     return mac.strip().lower()
 
 
-# filesystem safetey: ensure parent directory of the state file exists
+# filesystem safety: ensure parent directory of the state file exists
 def _ensure_parent_dir(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -54,5 +54,27 @@ def load_desired_state(path: Path = DEFAULT_DESIRED_STATE_PATH) -> dict[str, Any
             obj["version"] = 1
         return obj
     except json.JSONDecodeError:
-        # Corrupt desired state should not brick; start fresh but keep a clear timestamp.
+        # Corrupt desired state should not brick
+        # Start fresh but keep a clear timestamp
         return {"version": 1, "updated_at": _now_iso_utc(), "devices": {}}
+    
+    # safety so it wont crash if folder doesn't exist or if JSON was half written and 
+    # a crash happens and adds timestamps with fresh timestamps;
+def save_desired_state(obj: dict[str, Any], path: Path = DEFAULT_DESIRED_STATE_PATH) -> None:
+    _ensure_parent_dir(path)
+    obj["updated_at"] = _now_iso_utc()
+
+    tmp = path.with_suffix(".tmp")
+    with open(tmp, "w", encoding="utf-8") as f: # "w" for writing
+        json.dump(obj, f, ensure_ascii=False, separators=(",", ":"))
+        f.flush() # push python buffer to OS
+        os.fsync(f.fileno()) # force OS to commit to disk. dope
+
+        # so now if pi loses power after fsync completes:
+        # the temp file is very likely safe on disk and not just in "memory buffer"
+        # real file has no change yet
+
+        # ATOMIC REPLACE
+    os.replace(tmp, path)
+
+
