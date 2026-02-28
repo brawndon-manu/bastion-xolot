@@ -14,6 +14,8 @@ let wss: WebSocketServer | null = null;
 export function initWebSocket(server: Server) {
     wss = new WebSocketServer({ server });
 
+    console.log("Realtime WebSocket ready");
+
     wss.on("connection", (socket: WebSocket) => {
         console.log("Realtime client connected");
 
@@ -31,7 +33,10 @@ export function initWebSocket(server: Server) {
  *  - enforcement_service (future)
  */
 export function broadcast(event: string, payload: unknown) {
-    if (!wss) return;
+    if (!wss) {
+        console.warn("WebSocket broadcast attempted before initialization");
+        return;
+    }
 
     const message = JSON.stringify({ event, payload });
 
