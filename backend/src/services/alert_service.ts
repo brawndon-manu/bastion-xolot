@@ -9,14 +9,14 @@
  * Not complete implementation
  */
 
-import { db } from "../db/db";
+import { getDb } from "../db/db";
 import { randomUUID } from "crypto";
 
 /**
  * Create and store a new alert
  * Called by correlation_service when suspicious behavior is detected
  */
-export async function createAlert(data: {
+export function createAlert(data: {
     device_id?: string;
     type: string;
     severity: string;
@@ -25,6 +25,8 @@ export async function createAlert(data: {
     evidence?: string;
     confidence?: number;
 }) {
+    const db = getDb();
+
     const alert = {
         id: randomUUID(),
         device_id: data.device_id || null,
@@ -38,23 +40,13 @@ export async function createAlert(data: {
         created_at: Date.now()
     };
 
-    const stmt = db.prepare(`
+    db.prepare(`
         INSERT INTO alerts (
-            id,
-            device_id,
-            type,
-            severity,
-            title,
-            explanation,
-            evidence,
-            confidence,
-            status,
-            created_at
+            id, device_id, type, severity, title,
+            explanation, evidence, confidence, status, created_at
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    stmt.run(
+    `).run(
         alert.id,
         alert.device_id,
         alert.type,
@@ -74,24 +66,24 @@ export async function createAlert(data: {
  * Return all alerts ordered newest first
  * Used by GET /alerts
  */
-export async function listAlerts() {
-    const stmt = db.prepare(`
+export function listAlerts() {
+    const db = getDb();
+
+    return db.prepare(`
         SELECT * FROM alerts
         ORDER BY created_at DESC
-    `);
-
-    return stmt.all();
+    `).all();
 }
 
 /**
  * Fetch a single alert by ID
  * Used by GET /alerts/:id
  */
-export async function getAlert(id: string) {
-    const stmt = db.prepare(`
+export function getAlert(id: string) {
+    const db = getDb();
+
+    return db.prepare(`
         SELECT * FROM alerts
         WHERE id = ?
-    `);
-
-    return stmt.get(id);
+    `).get(id);
 }

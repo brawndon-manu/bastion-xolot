@@ -1,34 +1,10 @@
 import { Router } from "express";
 import { createAlert } from "../services/alert_service";
-// import { processIncomingEvent } from "../services/correlation_service";
+import { ensureDeviceExists } from "../services/device_service";
+import { broadcast } from "../realtime/websocket";
+import { explainSecurityEvent } from "../services/plain_english";
 
 export const eventsRouter = Router();
-
-/**
- * Ingest event from gateway agent
- * This is the primary signal entry point of the system.
- *
-eventsRouter.post("/", async (req, res) => {
-    try {
-        const event = req.body;
-
-        if (!event) {
-            return res.status(400).json({ error: "Missing event payload" });
-        }
-
-        const result = await processIncomingEvent(event);
-
-        res.json({
-            status: "accepted",
-            correlationId: result.correlationId || null
-        });
-    } catch (error) {
-        console.error("Event ingestion error:", error);
-        res.status(500).json({ error: "Failed to process event" })
-    }
-});
-
-*/
 
 /**
  * Event ingestion endpoint
@@ -40,18 +16,28 @@ eventsRouter.post("/", async (req, res) => {
 
         console.log("Received event:", event);
 
-        // Temp test: create an alert from incoming event
-        await createAlert({
-            device_id: "test-device",
-            severity: "medium",
-            title: "Blocked suspicious domain",
-            explanation: "Device attempted to contact known malicious domain",
-            evidence: JSON.stringify(event),
-            confidence: 0.75,
-            type: ""
+        // Ensure device exists BEFORE creating alert
+        const device = ensureDeviceExists({
+            id: event.device_id,
+            ip_address: event.ip,
+            hostname: event.hostname
         });
 
-        res.json({ status: "event processed" });
+        const explanation = explainSecurityEvent(event.type, event);
+
+        const alert = await createAlert({
+            device_id: device.id,
+            type: event.type,
+            severity: "medium",
+            title: `Security event: ${event.type}`,
+            explanation,
+            evidence: JSON.stringify(event),
+            confidence: 0.7
+        });
+
+        broadcast("alert_created", alert);
+
+        res.status(201).json(alert);
 
     } catch (err) {
         console.error("Event ingestion failed:", err);
