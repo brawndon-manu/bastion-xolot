@@ -28,11 +28,10 @@ WHY THE HEADER CHANGED:
 """
 
 from __future__ import annotations
-
 from typing import Any, Literal, Optional
-
 from bastion_agent import audit
 from bastion_agent.config import MONITOR_ONLY, DRY_RUN, ALLOW_ENFORCEMENT
+from bastion_agent import state
 
 # ---------------------------------------------------------------------------
 # OLD IMPORT BLOCK (removed)
@@ -252,11 +251,14 @@ def request_transition(
     label: Optional[str] = None,
 ) -> dict[str, Any]:
     """
-    Public entrypoint: build transaction, gate-check, append to audit journal.
+    State-machine entrypoint (Part 1):
+    - reads desired state to determine actual from_state
+    - updates desired_state.json
+    - logs a transaction as PLANNED_ONLY
 
-    Part 1 contract: always PLANNED_ONLY — no nft execution yet.
-    Execution will be introduced in Part 3 behind explicit gate conditions.
+    NOTE: from_state argument is ignored in favor of desired state.
     """
+    current = state.get_device_state(mac)
     tx = plan_transition(
         mac=mac,
         from_state=from_state,
@@ -267,7 +269,8 @@ def request_transition(
         iface=iface,
         label=label,
     )
-
+    # Updated desired state (even in monitor-only) this is "desired", not "applied"
+    state.set_device_state(mac, to_state, reason=reason, actor=actor)
     # Part 1 contract: never execute. Always planned-only.
     tx["result"]["status"] = "PLANNED_ONLY"
     tx_id = audit.append_tx(tx)
