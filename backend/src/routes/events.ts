@@ -3,6 +3,7 @@ import { createAlert } from "../services/alert_service";
 import { ensureDeviceExists } from "../services/device_service";
 import { broadcast } from "../realtime/websocket";
 import { explainSecurityEvent } from "../services/plain_english";
+import { processEvent } from "../services/correlation_service";
 
 export const eventsRouter = Router();
 
@@ -23,21 +24,16 @@ eventsRouter.post("/", async (req, res) => {
             hostname: event.hostname
         });
 
-        const explanation = explainSecurityEvent(event.type, event);
+        const alert = await processEvent(event, device.id);
 
-        const alert = await createAlert({
-            device_id: device.id,
-            type: event.type,
-            severity: "medium",
-            title: `Security event: ${event.type}`,
-            explanation,
-            evidence: JSON.stringify(event),
-            confidence: 0.7
+        if (alert) {
+            broadcast("alert_created", alert);
+        }
+
+        res.status(201).json({
+            status: "processed",
+            alert
         });
-
-        broadcast("alert_created", alert);
-
-        res.status(201).json(alert);
 
     } catch (err) {
         console.error("Event ingestion failed:", err);

@@ -110,3 +110,12 @@ export function listDevices(): Device[] {
     const db = getDb();
     return db.prepare(`SELECT * FROM devices`).all() as Device[];
 }
+
+export function updateDeviceRisk(deviceId: string, delta: number) {
+    const db = getDb();
+    db.prepare(`
+        UPDATE devices
+        SET risk_score = risk_score + ?
+        WHERE id = ?
+    `).run(delta, deviceId);
+}
