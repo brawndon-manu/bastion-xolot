@@ -33,27 +33,6 @@ from bastion_agent import audit
 from bastion_agent.config import MONITOR_ONLY, DRY_RUN, ALLOW_ENFORCEMENT
 from bastion_agent import state
 
-# ---------------------------------------------------------------------------
-# OLD IMPORT BLOCK (removed)
-# ---------------------------------------------------------------------------
-# import logging
-# from bastion_agent.config import enforcement_allowed, DRY_RUN
-# logger = logging.getLogger(__name__)
-#
-# WHY REMOVED:
-#   The old stub imported enforcement_allowed() — a single yes/no gate
-#   function — and DRY_RUN. The new module imports all three raw flags
-#   (MONITOR_ONLY, DRY_RUN, ALLOW_ENFORCEMENT) directly because it needs
-#   to snapshot each one individually into the transaction record.
-#   Knowing "enforcement was denied" is not enough — we need to know
-#   exactly which gate denied it and what state each gate was in at the
-#   time of the transaction.
-#
-#   logging is removed for the same reason as in audit.py — the stub
-#   used it because there was nothing real to do. Now we write actual
-#   transaction records, so the audit journal is the output.
-# ---------------------------------------------------------------------------
-
 
 EnfState = Literal["NONE", "SOFT", "HARD"]
 Op = Literal["ADD_SOFT", "DEL_SOFT", "ADD_HARD", "DEL_HARD"]
@@ -77,7 +56,9 @@ def _gates_snapshot() -> dict[str, bool]:
     }
 
 
-def _plan_ops(mac: str, from_state: EnfState, to_state: EnfState) -> list[dict[str, str]]:
+def _plan_ops(
+    mac: str, from_state: EnfState, to_state: EnfState
+) -> list[dict[str, str]]:
     """
     Compute nft set membership operations needed for a state transition.
 
@@ -105,30 +86,6 @@ def _plan_ops(mac: str, from_state: EnfState, to_state: EnfState) -> list[dict[s
         ops.append({"op": "ADD_HARD", "mac": mac})
 
     return ops
-
-
-# ---------------------------------------------------------------------------
-# OLD FUNCTION: recommend_action (removed)
-# ---------------------------------------------------------------------------
-# def recommend_action(alert: dict) -> str | None:
-#     """
-#     Given an alert, recommend an enforcement action.
-#     Phase 4 implementation will analyze alert severity, type,
-#     and evidence to suggest the appropriate response.
-#     Returns action string or None if no action recommended.
-#     """
-#     logger.debug("enforcement.recommend_action() — not yet implemented (Phase 4)")
-#     return None
-#
-# WHY REMOVED:
-#   This was a detection-side advisory function — it was going to inspect
-#   an alert dict and return a string like "quarantine" or "block_destination".
-#   That responsibility now belongs upstream. The caller (detection layer,
-#   backend, or user action) decides what transition to request. The
-#   enforcement module's job is to plan, gate-check, and log — not to
-#   interpret alerts. Mixing those concerns here would make both harder
-#   to test and harder to audit.
-# ---------------------------------------------------------------------------
 
 
 def plan_transition(
@@ -182,67 +139,8 @@ def plan_transition(
     return tx
 
 
-# ---------------------------------------------------------------------------
-# OLD FUNCTION: request_quarantine (removed)
-# ---------------------------------------------------------------------------
-# def request_quarantine(device_mac: str, reason: str) -> bool:
-#     """
-#     Request quarantine of a device.
-#     Returns True if quarantine was applied, False otherwise.
-#     """
-#     if not enforcement_allowed():
-#         logger.info("Quarantine requested for %s but enforcement is not allowed", device_mac)
-#         return False
-#     if DRY_RUN:
-#         logger.info("[DRY RUN] Would quarantine device: %s — reason: %s", device_mac, reason)
-#         return False
-#     logger.debug("enforcement.request_quarantine(%s) — not yet implemented (Phase 4)", device_mac)
-#     return False
-#
-# WHY REMOVED:
-#   This returned a boolean — True if quarantine applied, False otherwise.
-#   A boolean tells you nothing useful for auditing:
-#     - Were the gates open or closed?
-#     - What firewall ops were planned?
-#     - Was this monitor-only or dry-run?
-#     - What was the before/after state?
-#   You cannot answer any of those questions from True/False.
-#   It also conflated SOFT and HARD quarantine into one function, which
-#   makes the two-stage model impossible to express.
-#   Replaced by request_quarantine_soft and request_quarantine_hard,
-#   both of which return the full transaction dict.
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# OLD FUNCTION: request_unquarantine (removed)
-# ---------------------------------------------------------------------------
-# def request_unquarantine(device_mac: str, reason: str) -> bool:
-#     """
-#     Request removal of quarantine for a device.
-#     Returns True if unquarantine was applied, False otherwise.
-#     """
-#     if not enforcement_allowed():
-#         logger.info("Unquarantine requested for %s but enforcement is not allowed", device_mac)
-#         return False
-#     logger.debug(
-#         "enforcement.request_unquarantine(%s) — not yet implemented (Phase 4)", device_mac
-#     )
-#     return False
-#
-# WHY REMOVED:
-#   Same reason as request_quarantine — returned a boolean with no
-#   context about what happened or why. Also had no concept of which
-#   quarantine state (SOFT or HARD) was being reversed, which means
-#   it could not compute the correct nft DEL operation.
-#   Replaced by request_unquarantine below, which takes from_state
-#   explicitly and returns the full transaction dict.
-# ---------------------------------------------------------------------------
-
-
 def request_transition(
     mac: str,
-    from_state: EnfState,
     to_state: EnfState,
     reason: str,
     actor: str = "manual",
@@ -261,7 +159,7 @@ def request_transition(
     current = state.get_device_state(mac)
     tx = plan_transition(
         mac=mac,
-        from_state=from_state,
+        from_state=current,  # changed from "from_state=from_state"
         to_state=to_state,
         reason=reason,
         actor=actor,
@@ -271,6 +169,7 @@ def request_transition(
     )
     # Updated desired state (even in monitor-only) this is "desired", not "applied"
     state.set_device_state(mac, to_state, reason=reason, actor=actor)
+
     # Part 1 contract: never execute. Always planned-only.
     tx["result"]["status"] = "PLANNED_ONLY"
     tx_id = audit.append_tx(tx)
@@ -278,24 +177,43 @@ def request_transition(
     return tx
 
 
-# Convenience wrappers — clean named entry points so callers
-# do not have to pass state strings manually.
-
-def request_quarantine_soft(mac: str, reason: str, actor: str = "manual") -> dict[str, Any]:
-    """Transition device from NONE → SOFT (WAN isolation, LAN still allowed)."""
-    return request_transition(mac, "NONE", "SOFT", reason, actor=actor)
-
-
-def request_quarantine_hard(mac: str, reason: str, actor: str = "manual") -> dict[str, Any]:
-    """Transition device from NONE → HARD (full containment)."""
-    return request_transition(mac, "NONE", "HARD", reason, actor=actor)
+# Convenience wrappers — public enforcement entrypoints.
+#
+# IMPORTANT:
+# - Callers provide ONLY the target state.
+# - The authoritative "from_state" is read from desired_state.json.
+# - This guarantees transaction logs reflect actual state transitions,
+#   not caller assumptions.
 
 
-def request_unquarantine(mac: str, reason: str, actor: str = "manual") -> dict[str, Any]:
+def request_quarantine_soft(
+    mac: str, reason: str, actor: str = "manual"
+) -> dict[str, Any]:
     """
-    Transition device back to NONE (full access restored).
+    Transition device to SOFT quarantine.
 
-    Assumes HARD as the from_state for now. In Part 4 we will reconcile
-    actual state from desired_state.json + nft inspection before calling this.
+    The previous state is determined internally from desired_state.json.
     """
-    return request_transition(mac, "HARD", "NONE", reason, actor=actor)
+    return request_transition(mac, "SOFT", reason, actor=actor)
+
+
+def request_quarantine_hard(
+    mac: str, reason: str, actor: str = "manual"
+) -> dict[str, Any]:
+    """
+    Transition device to HARD quarantine.
+
+    The previous state is determined internally from desired_state.json.
+    """
+    return request_transition(mac, "HARD", reason, actor=actor)
+
+
+def request_unquarantine(
+    mac: str, reason: str, actor: str = "manual"
+) -> dict[str, Any]:
+    """
+    Transition device back to NONE (fully unquarantined).
+
+    The previous state is determined internally from desired_state.json.
+    """
+    return request_transition(mac, "NONE", reason, actor=actor)
