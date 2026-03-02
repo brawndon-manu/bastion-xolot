@@ -77,4 +77,34 @@ def save_desired_state(obj: dict[str, Any], path: Path = DEFAULT_DESIRED_STATE_P
         # ATOMIC REPLACE
     os.replace(tmp, path)
 
+def set_device_state(
+        mac: str, 
+        state: EnfState, 
+        reason: str, 
+        actor: str, 
+        path: Path=DEFAULT_DESIRED_STATE_PATH) -> dict[str, Any]:
+    mac = _normalize_mac(mac)
+    obj = load_desired_state(path)
+    devices = obj.setdefault("devices", {})
 
+    if state == "NONE": # so device gets removed entirely keeping the file clean
+        devices.pop(mac, None)
+    else:
+        devices[mac] = {
+            "state": state,
+            "reason": reason,
+            "actor": actor,
+            "updated_at": _now_iso_utc(),
+        }
+
+    save_desired_state(obj, path)
+    return obj
+
+def get_device_state(mac: str, path: Path = DEFAULT_DESIRED_STATE_PATH) -> EnfState:
+    mac = _normalize_mac(mac)
+    obj = load_desired_state(path)
+    dev = (obj.get("devices") or {}).get(mac)
+    if not dev:
+        return "NONE"
+    s = dev.get("state")
+    return s if s in ("SOFT", "HARD") else "NONE"
