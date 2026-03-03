@@ -38,11 +38,40 @@ def build_nft_command(op: Op, mac: str) -> list[str]:
 
 def run_command(argv: list[str]) -> None:
     """
-    Execute the command. Intended for Pi runtime later.
-    Raises CalledProcessError on failure.
+    Execute the command safely.
+
+    Idempotency rules:
+    - Deleting an element that does not exist is treated as success.
+    - Adding an element that already exists is treated as success. (nice-to-have)
     """
-    # Prefix argv with sudo, run it, and fail loudly on errors
-    subprocess.run(["sudo", *argv], check=True)
+    proc = subprocess.run(
+        ["sudo", *argv],
+        text=True,
+        capture_output=True,
+    )
+
+    if proc.returncode == 0:
+        return
+
+    stderr = (proc.stderr or "").lower()
+
+    # Narrowly whitelist expected idempotent nft errors
+    is_delete_element = ("delete" in argv) and ("element" in argv)
+    is_add_element = ("add" in argv) and ("element" in argv)
+
+    if is_delete_element and "element does not exist" in stderr:
+        return
+
+    if is_add_element and "element already exists" in stderr:
+        return
+
+    # Otherwise: real failure
+    raise subprocess.CalledProcessError(
+        proc.returncode,
+        proc.args,
+        output=proc.stdout,
+        stderr=proc.stderr,
+    )
 
 def apply_ops(ops: list[dict[str, str]], *, execute: bool) -> list[list[str]]:
     """
