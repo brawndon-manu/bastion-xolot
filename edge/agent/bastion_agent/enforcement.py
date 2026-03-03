@@ -1,30 +1,29 @@
 """
-Bastión Xólot — Enforcement Module (Phase 4)
+Bastión Xólot — Enforcement Engine (Phase 4)
 
-Phase 4 Part 1: Transaction planning + append-only audit (monitor-only safe)
+This module owns the full enforcement transaction lifecycle:
 
-This module does NOT execute nftables yet.
-It computes the plan and logs the transaction as PLANNED_ONLY unless
-all enforcement gates are explicitly enabled.
+1. Determine current device state (desired_state.json)
+2. Plan the state transition (compute nft set ops)
+3. Snapshot enforcement safety gates
+4. Execute nft ops when gates are open
+5. Record result (NOOP / PLANNED_ONLY / EXECUTED / FAILED)
+6. Append immutable transaction record to local audit journal
 
---- PHASE 4 UPGRADE NOTES ---
-This module was rewritten from its Phase 4 stub. The old stub is preserved
-below in comments so the reasoning for each change is clear.
+Execution Model:
+- If no state change is required → result = "NOOP"
+- If state change required but gates are closed → result = "PLANNED_ONLY"
+- If state change required and gates are open:
+    - Success → "EXECUTED"
+    - Error → "FAILED"
 
-Old module header described:
-  - "Detection-side interface for enforcement actions"
-  - "Tags alerts with recommended enforcement actions"
-  - "Validates that enforcement is safe before requesting it"
-  - Enforcement types: quarantine, unquarantine, block_destination, etc.
+Safety Properties:
+- Idempotent operations (repeated requests are safe)
+- Delete of non-existent element is treated as success
+- Add of existing element is treated as success
+- All transactions recorded append-only (audit trail)
 
-WHY THE HEADER CHANGED:
-  The old framing put this module in a passive advisory role —
-  it was going to recommend actions and defer to the Systems Architect
-  for actual execution. Phase 4 changes that. This module now owns
-  the full transaction lifecycle: build the plan, snapshot the gates,
-  write the audit record. Execution (nft calls) comes later in Part 3.
-  The module is no longer detection-side only — it is the enforcement
-  state machine entry point.
+This module is the enforcement state machine entrypoint for the Bastión gateway.
 """
 
 from __future__ import annotations
@@ -38,6 +37,7 @@ from bastion_agent import enforcement_apply
 
 
 EnfState = Literal["NONE", "SOFT", "HARD"]
+ResultStatus = Literal["NOOP", "PLANNED_ONLY", "EXECUTED", "FAILED"]
 Op = Literal["ADD_SOFT", "DEL_SOFT", "ADD_HARD", "DEL_HARD"]
 
 
@@ -183,14 +183,21 @@ def request_transition(
     # Updated desired state (even in monitor-only) this is "desired", not "applied"
     state.set_device_state(mac, to_state, reason=reason, actor=actor)
 
-    # Part 1 contract: never execute. Always planned-only.
-    tx["result"]["status"] = "PLANNED_ONLY"
+    # Determine planned ops once (used for NOOP / PLANNED_ONLY / EXECUTED)
+    ops = tx["plan"]["nft"]["ops"]
     tx["result"]["error"] = None
 
-    # If and only if gates are open, execute the planned ops.
-    if enforcement_allowed():
+    # If no changes are required, this is an idempotent request.
+    if not ops:
+        tx["result"]["status"] = "NOOP"
+
+    # If changes are required but gates are closed, record as planned-only.
+    elif not enforcement_allowed():
+        tx["result"]["status"] = "PLANNED_ONLY"
+
+    # Gates open and ops exist → execute
+    else:
         try:
-            ops = tx["plan"]["nft"]["ops"]
             enforcement_apply.apply_ops(ops, execute=True)
             tx["result"]["status"] = "EXECUTED"
         except Exception as exc:
