@@ -33,6 +33,9 @@ from bastion_agent import audit
 from bastion_agent.config import MONITOR_ONLY, DRY_RUN, ALLOW_ENFORCEMENT
 from bastion_agent import state
 
+from bastion_agent.config import enforcement_allowed
+from bastion_agent import enforcement_apply
+
 
 EnfState = Literal["NONE", "SOFT", "HARD"]
 Op = Literal["ADD_SOFT", "DEL_SOFT", "ADD_HARD", "DEL_HARD"]
@@ -109,6 +112,7 @@ def plan_transition(
     gates = _gates_snapshot()
     ops = _plan_ops(mac_norm, from_state, to_state)
 
+    # tx is transaction which represents: One requested state change for one device
     tx: dict[str, Any] = {
         # tx_id and ts are added by audit.append_tx if missing
         "device": {
@@ -138,7 +142,16 @@ def plan_transition(
 
     return tx
 
+"""
+request_transition()
 
+- determine current state
+- plan the transition
+- update desired_state.json
+- possibly execute nft ops
+- record result
+- append to audit log
+"""
 def request_transition(
     mac: str,
     to_state: EnfState,
@@ -172,6 +185,18 @@ def request_transition(
 
     # Part 1 contract: never execute. Always planned-only.
     tx["result"]["status"] = "PLANNED_ONLY"
+    tx["result"]["error"] = None
+
+    # If and only if gates are open, execute the planned ops.
+    if enforcement_allowed():
+        try:
+            ops = tx["plan"]["nft"]["ops"]
+            enforcement_apply.apply_ops(ops, execute=True)
+            tx["result"]["status"] = "EXECUTED"
+        except Exception as exc:
+            tx["result"]["status"] = "FAILED"
+            tx["result"]["error"] = str(exc)
+
     tx_id = audit.append_tx(tx)
     tx["tx_id"] = tx_id
     return tx
