@@ -4,6 +4,7 @@ import re
 import subprocess
 from typing import Literal
 
+# Op is a TYPE alias: op can only be one of these 4 string values
 Op = Literal["ADD_SOFT", "DEL_SOFT", "ADD_HARD", "DEL_HARD"]
 
 _MAC_RE = re.compile(r"^[0-9a-f]{2}(:[0-9a-f]{2}){5}$")
@@ -42,3 +43,30 @@ def run_command(argv: list[str]) -> None:
     """
     # Prefix argv with sudo, run it, and fail loudly on errors
     subprocess.run(["sudo", *argv], check=True)
+
+def apply_ops(ops: list[dict[str, str]], *, execute: bool) -> list[list[str]]:
+    """
+    Apply a list of nft ops of the form: {"op": "...", "mac": "..."}.
+
+    Returns the argv commands (for audit/debug).
+    If execute=False: does not run anything.
+    If execute=True: runs commands in order, raises on first failure.
+    """
+    commands: list[list[str]] = []
+
+    for item in ops:
+        op = item.get("op")
+        mac = item.get("mac")
+
+        # important validation of types
+        if not isinstance(op, str) or not isinstance(mac, str):
+            raise ValueError(f"invalid op entry: {item}")
+
+        argv = build_nft_command(op, mac)  # type: ignore[arg-type]
+        commands.append(argv)
+
+        if execute:
+            # raises CalledProcessError on failure
+            run_command(argv)
+
+    return commands
