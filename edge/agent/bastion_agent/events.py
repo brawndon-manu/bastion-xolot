@@ -159,7 +159,7 @@ def enqueue_and_dispatch(event: dict) -> None:
     will be retried on the next dispatch cycle.
     """
     enqueue_event(event["id"], event)
-    logger.debug("Event %s (%s) queued locally", event["id"], event["type"])
+    logger.debug("Event %s (%s) queued locally", event["id"], event.get("type", "alert"))
 
 
 async def dispatch_to_backend(events: list[dict]) -> list[str]:
