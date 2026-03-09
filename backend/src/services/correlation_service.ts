@@ -1,6 +1,6 @@
 import { createAlert } from "./alert_service";
 import { updateDeviceRisk, getDevice } from "./device_service";
-import { createEnforcementAction } from "./enforcement_service";
+import { quarantineDevice } from "./enforcement_service";
 
 type CorrelationResult = {
     alert?: any;
@@ -74,10 +74,9 @@ export async function processEvent(event: any, deviceId: string): Promise<Correl
     /**
      * RULE 3 - Automatic enforcement threshold
      */
-    if (device && device.risk_score >= 50) {
-        enforcement = createEnforcementAction(
+    if (device && device.risk_score >= 50 && device.status !== "quarantined") {
+        enforcement = quarantineDevice(
             deviceId,
-            "isolate_device",
             "Risk score exceeded threshold"
         );
     }

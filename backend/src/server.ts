@@ -19,10 +19,14 @@ import { initDatabase } from "./db/db";
 
 import { devicesRouter } from "./routes/devices";
 
+import { enforcementRouter } from "./routes/enforcement";
+
 initDatabase();
 const app = express();
 app.use(express.json());
 app.use("/devices", devicesRouter);
+
+app.use("/enforcement", enforcementRouter);
 
 /**
  * Register API Routes
