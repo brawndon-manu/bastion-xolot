@@ -1,11 +1,14 @@
 import { createAlert } from "./alert_service";
 import { updateDeviceRisk, getDevice } from "./device_service";
 import { quarantineDevice } from "./enforcement_service";
+import { broadcast } from "../realtime/websocket";
+
 
 type CorrelationResult = {
     alert?: any;
     enforcement?: any;
     risk_score?: number;
+    device?: any;
 }
 
 /**
@@ -33,8 +36,8 @@ export async function processEvent(event: any, deviceId: string): Promise<Correl
             device_id: deviceId,
             type: event.type,
             severity: "medium",
-            title: "Blocked malicious domain",
-            explanation: "Device attempted to access a blocked domain",
+            title: `Blocked domain: ${event.domain || "unknown"}`,
+            explanation: `Device attempted to access a known malicious domain (${event.domain || "unknown"}). This may indicate malware or phishing activity.`,
             evidence: JSON.stringify(event),
             confidence: 0.8
         });
@@ -58,21 +61,46 @@ export async function processEvent(event: any, deviceId: string): Promise<Correl
     }
 
     /**
-     * If no rule matched -> nothing to do
+     * RULE 3 - IDS Alert
      */
+    if (event.type === "ids_alert") {
+        riskDelta = 25;
+
+        alert = await createAlert({
+            device_id: deviceId,
+            type: event.type,
+            severity: "high",
+            title: `IDS Alert: ${event.signature || "Unknown threat"}`,
+            explanation: "Intrusion detection system flagged this traffic as malicious.",
+            evidence: JSON.stringify(event),
+            confidence: 0.9
+        });
+    }
+
     if (riskDelta === 0) {
         return {};
     }
 
-    /**
-     * Update device risk score
-     */
     updateDeviceRisk(deviceId, riskDelta);
-
     const device = getDevice(deviceId);
 
     /**
-     * RULE 3 - Automatic enforcement threshold
+     * RULE 4 - Correlated threat escalation
+     */
+    if (event.type === "dns_block" && device && device.risk_score > 20) {
+        alert = await createAlert({
+            device_id: deviceId,
+            type: "correlated_threat",
+            severity: "high",
+            title: "Escalating threat behavior detected",
+            explanation: "Device shows repeated malicious DNS activity and elevated risk score.",
+            evidence: JSON.stringify(event),
+            confidence: 0.95
+        });
+    }
+
+    /**
+     * RULE 5 - Automatic enforcement
      */
     if (device && device.risk_score >= 50 && device.status !== "quarantined") {
         enforcement = quarantineDevice(
@@ -81,9 +109,21 @@ export async function processEvent(event: any, deviceId: string): Promise<Correl
         );
     }
 
+    /**
+     * REAL-TIME BROADCAST
+     */
+    if (alert) {
+        broadcast("alert.created", alert);
+    }
+
+    if (enforcement) {
+        broadcast("device.quarantined", enforcement);
+    }
+
     return {
         alert,
         enforcement,
-        risk_score: device?.risk_score
+        risk_score: device?.risk_score,
+        device
     };
 }
