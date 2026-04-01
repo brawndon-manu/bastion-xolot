@@ -5,6 +5,7 @@ import random
 import json
 from datetime import datetime
 from typing import Dict, Any
+from collections import defaultdict
 from bastion_agent.detection import handle_event
 
 
@@ -26,6 +27,12 @@ YELLOW = "\033[93m"
 GREEN = "\033[92m"
 CYAN = "\033[96m"
 BOLD = "\033[1m"
+
+
+# Dashboard counters
+event_count = 0
+status_counts = defaultdict(int)
+mac_counter = defaultdict(int)
 
 
 def generate_event() -> Dict[str, Any]:
@@ -65,7 +72,7 @@ def get_action_label(to_state: str | None, status: str) -> str:
     return f"{GREEN}NO ACTION{RESET}"
 
 
-# 🔥 Prevent downgrade (HARD → SOFT)
+# Prevent downgrade (HARD to SOFT)
 def apply_severity_policy(event: Dict[str, Any]) -> Dict[str, Any]:
     mac = event.get("mac")
     severity = event.get("severity")
@@ -115,14 +122,59 @@ def pretty_print(event: Dict[str, Any], result: Dict[str, Any]) -> None:
     print("=" * 60)
 
 
+def print_dashboard():
+    print("\n" + "#" * 60)
+    print(f"{BOLD}{CYAN}LIVE SYSTEM SUMMARY{RESET}")
+
+    print(f"Total Events: {event_count}")
+    print(f"EXECUTED: {status_counts['EXECUTED']}")
+    print(f"NOOP: {status_counts['NOOP']}")
+    print(f"IGNORED: {status_counts['IGNORED']}")
+
+    # Count current state
+    try:
+        with open(STATE_FILE, "r") as f:
+            data = json.load(f)
+        devices = data.get("devices", {})
+        hard = sum(1 for d in devices.values() if d.get("state") == "HARD")
+        soft = sum(1 for d in devices.values() if d.get("state") == "SOFT")
+    except Exception:
+        hard = soft = 0
+
+    print(f"HARD Devices: {hard}")
+    print(f"SOFT Devices: {soft}")
+
+    # Top offender
+    if mac_counter:
+        top_mac = max(mac_counter, key=mac_counter.get)
+        print(f"Top Offender: {top_mac} ({mac_counter[top_mac]} events)")
+
+    print("#" * 60 + "\n")
+
+
 def main():
+    global event_count
+
     print(f"{BOLD}{CYAN}Starting continuous detection loop...{RESET}\n")
 
     while True:
         event = generate_event()
+        mac = event["mac"]
+
         result = apply_severity_policy(event)
 
+        status = result.get("result", {}).get("status", "UNKNOWN")
+
+        # Update counters
+        event_count += 1
+        status_counts[status] += 1
+        mac_counter[mac] += 1
+
         pretty_print(event, result)
+
+        # Print dashboard every 10 events
+        if event_count % 10 == 0:
+            print_dashboard()
 
         time.sleep(3)
 
