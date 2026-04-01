@@ -78,7 +78,12 @@ def pretty_print(event: Dict[str, Any], result: Dict[str, Any]) -> None:
 
     if from_state and to_state:
         print(f"Transition: {from_state} → {to_state}")
-        print(f"Action: {get_action_label(to_state)}")
+        print(f"Current State: {to_state}")
+
+        if status == "NOOP":
+            print(f"Action: {GREEN}ALREADY ENFORCED{RESET}")
+        else:
+            print(f"Action: {get_action_label(to_state)}")
 
     print("=" * 60)
 
