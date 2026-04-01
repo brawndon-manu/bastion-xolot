@@ -158,9 +158,18 @@ def main():
 
     print(f"{BOLD}{CYAN}Starting continuous detection loop...{RESET}\n")
 
+    seen_events = set()
+
     while True:
         events = parse_eve_log("bastion_agent/sample_eve.jsonl")
         for event in events:
+            event_id = (event["mac"], event["reason"])
+    
+            if event_id in seen_events:
+                continue
+
+            seen_events.add(event_id)
+
             mac = event["mac"]
 
             result = apply_severity_policy(event)
