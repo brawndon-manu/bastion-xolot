@@ -3,11 +3,13 @@ from __future__ import annotations
 import time
 import random
 import json
+import subprocess
 from datetime import datetime
 from typing import Dict, Any
 from collections import defaultdict
 from bastion_agent.detection import handle_event
 from bastion_agent.suricata_adapter import parse_eve_log
+from bastion_agent.device_registry import update_device
 
 
 TEST_MACS = [
@@ -90,19 +92,15 @@ def apply_severity_policy(event: Dict[str, Any]) -> Dict[str, Any]:
 
 def resolve_mac(ip: str) -> str | None:
     try:
-        with open("/proc/net/arp", "r") as f:
-            lines = f.readlines()[1:]  # skip header
+        output = subprocess.check_output(["ip", "neigh", "show", ip], text=True)
+        parts = output.split()
 
-        for line in lines:
-            parts = line.split()
-            ip_addr = parts[0]
-            mac_addr = parts[3]
-
-            if ip_addr == ip and mac_addr != "00:00:00:00:00:00":
-                return mac_addr.lower()
+        if "lladdr" in parts:
+            mac_index = parts.index("lladdr") + 1
+            return parts[mac_index]
 
     except Exception:
-        pass
+        return None
 
     return None
 
@@ -202,7 +200,8 @@ def stream_eve_log(log_path: str):
                 src_ip = data.get("src_ip")
                 mac = resolve_mac(src_ip) or "unknown"
                 yield {
-                    "mac": mac,  # placeholder mapping
+                    "mac": mac,
+                    "ip": src_ip,
                     "severity": severity,
                     "reason": alert.get("signature", "unknown alert")
                 }
@@ -226,6 +225,9 @@ def main():
         seen_events.add(event_id)
 
         mac = event["mac"]
+        ip = event.get("ip")
+
+        update_device(mac, ip)
 
         result = apply_severity_policy(event)
 
