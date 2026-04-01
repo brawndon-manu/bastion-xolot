@@ -178,7 +178,7 @@ def main():
             if event_count % 10 == 0:
                 print_dashboard()
 
-    time.sleep(3)
+        time.sleep(3)
 
 
 if __name__ == "__main__":
