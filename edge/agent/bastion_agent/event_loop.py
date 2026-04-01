@@ -191,15 +191,18 @@ def stream_eve_log(log_path: str):
                 alert = data.get("alert", {})
                 sev = alert.get("severity", 3)
 
-                # Map Suricata severity → our system
+                # Map Suricata severity to our system
                 if sev == 1:
                     severity = "high"
                 elif sev == 2:
                     severity = "medium"
                 else:
                     severity = "low"
+                
+                src_ip = data.get("src_ip")
+                mac = resolve_mac(src_ip) or "unknown"
                 yield {
-                    "mac": "aa:bb:cc:dd:ee:21",  # placeholder mapping
+                    "mac": mac,  # placeholder mapping
                     "severity": severity,
                     "reason": alert.get("signature", "unknown alert")
                 }
