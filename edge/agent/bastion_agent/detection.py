@@ -6,15 +6,16 @@ from bastion_agent import enforcement
 
 def handle_event(event: Dict[str, Any]) -> dict:
     """
-    Convert a detection event into an enforcement action.
+    Entry point for detection events.
 
-    Expected event format:
-    {
-        "type": "suspicious_traffic",
-        "mac": "aa:bb:cc:dd:ee:ff",
-        "severity": "high" | "medium" | "low",
-        "reason": "string"
-    }
+    This function:
+    - Receives normalized event input
+    - Applies simple policy logic
+    - Delegates enforcement decisions
+
+    DOES NOT:
+    - Touch nft directly
+    - Modify system state directly
     """
 
     mac = event.get("mac")
@@ -24,18 +25,25 @@ def handle_event(event: Dict[str, Any]) -> dict:
     if not mac:
         raise ValueError("event missing mac")
 
-    # Decision logic (this is your policy engine)
+    # policy engine (Phase 5 R2)
     if severity == "high":
-        return enforcement.request_quarantine_hard(mac, reason, actor="detection")
+        return enforcement.request_quarantine_hard(
+            mac=mac,
+            reason=reason,
+            actor="detection"
+        )
 
     elif severity == "medium":
-        return enforcement.request_quarantine_soft(mac, reason, actor="detection")
+        return enforcement.request_quarantine_soft(
+            mac=mac,
+            reason=reason,
+            actor="detection"
+        )
 
-    else:
-        # low severity → no enforcement
-        return {
-            "result": {
-                "status": "IGNORED",
-                "reason": "low severity"
-            }
+    # LOW severity -> ignore
+    return {
+        "result": {
+            "status": "IGNORED",
+            "reason": "low severity"
         }
+    }
