@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import time
 import random
+import json
 from datetime import datetime
 from typing import Dict, Any
 from bastion_agent.detection import handle_event
-from bastion_agent.state import get_desired_state  # we read current state
 
 
 TEST_MACS = [
@@ -15,6 +15,8 @@ TEST_MACS = [
 ]
 
 SEVERITIES = ["low", "medium", "high"]
+
+STATE_FILE = "/var/lib/bastion/enforcement/desired_state.json"
 
 
 # ANSI Colors
@@ -32,6 +34,15 @@ def generate_event() -> Dict[str, Any]:
         "severity": random.choice(SEVERITIES),
         "reason": "simulated continuous activity"
     }
+
+
+def read_current_state(mac: str) -> str | None:
+    try:
+        with open(STATE_FILE, "r") as f:
+            data = json.load(f)
+        return data.get("devices", {}).get(mac, {}).get("state")
+    except Exception:
+        return None
 
 
 def get_color(severity: str) -> str:
@@ -54,13 +65,12 @@ def get_action_label(to_state: str | None, status: str) -> str:
     return f"{GREEN}NO ACTION{RESET}"
 
 
-# CRITICAL: Prevent downgrade (HARD to SOFT)
+# 🔥 Prevent downgrade (HARD → SOFT)
 def apply_severity_policy(event: Dict[str, Any]) -> Dict[str, Any]:
     mac = event.get("mac")
     severity = event.get("severity")
 
-    state = get_desired_state()
-    current = state.get("devices", {}).get(mac, {}).get("state")
+    current = read_current_state(mac)
 
     if current == "HARD" and severity == "medium":
         return {
@@ -110,7 +120,7 @@ def main():
 
     while True:
         event = generate_event()
-        result = apply_severity_policy(event)  # use protected logic
+        result = apply_severity_policy(event)
 
         pretty_print(event, result)
 
