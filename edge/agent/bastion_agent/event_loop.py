@@ -5,6 +5,7 @@ import random
 from datetime import datetime
 from typing import Dict, Any
 from bastion_agent.detection import handle_event
+from bastion_agent.state import get_desired_state  # we read current state
 
 
 TEST_MACS = [
@@ -38,16 +39,36 @@ def get_color(severity: str) -> str:
         return RED
     elif severity == "MEDIUM":
         return YELLOW
-    else:
-        return GREEN
+    return GREEN
 
 
-def get_action_label(to_state: str | None) -> str:
+def get_action_label(to_state: str | None, status: str) -> str:
+    if status == "NOOP":
+        return f"{GREEN}ALREADY ENFORCED{RESET}"
+
     if to_state == "HARD":
         return f"{RED}HARD QUARANTINE{RESET}"
     elif to_state == "SOFT":
         return f"{YELLOW}SOFT QUARANTINE{RESET}"
+
     return f"{GREEN}NO ACTION{RESET}"
+
+
+# CRITICAL: Prevent downgrade (HARD to SOFT)
+def apply_severity_policy(event: Dict[str, Any]) -> Dict[str, Any]:
+    mac = event.get("mac")
+    severity = event.get("severity")
+
+    state = get_desired_state()
+    current = state.get("devices", {}).get(mac, {}).get("state")
+
+    if current == "HARD" and severity == "medium":
+        return {
+            "result": {"status": "NOOP"},
+            "transition": {"from": "HARD", "to": "HARD"}
+        }
+
+    return handle_event(event)
 
 
 def pretty_print(event: Dict[str, Any], result: Dict[str, Any]) -> None:
@@ -79,11 +100,7 @@ def pretty_print(event: Dict[str, Any], result: Dict[str, Any]) -> None:
     if from_state and to_state:
         print(f"Transition: {from_state} → {to_state}")
         print(f"Current State: {to_state}")
-
-        if status == "NOOP":
-            print(f"Action: {GREEN}ALREADY ENFORCED{RESET}")
-        else:
-            print(f"Action: {get_action_label(to_state)}")
+        print(f"Action: {get_action_label(to_state, status)}")
 
     print("=" * 60)
 
@@ -93,7 +110,7 @@ def main():
 
     while True:
         event = generate_event()
-        result = handle_event(event)
+        result = apply_severity_policy(event)  # use protected logic
 
         pretty_print(event, result)
 
