@@ -17,13 +17,16 @@ def _desired_membership() -> Dict[str, set[str]]:
     soft: set[str] = set()
     hard: set[str] = set()
 
-    devices = state._load_state().get("devices", {})
+    obj = state.load_desired_state()
+    devices = obj.get("devices", {})
 
     for mac, info in devices.items():
-        s = info.get("state")
-        if s == "SOFT":
+        if not isinstance(info, dict):
+            continue
+    s = info.get("state")
+    if s == "SOFT":
             soft.add(mac)
-        elif s == "HARD":
+    elif s == "HARD":
             hard.add(mac)
 
     return {"SOFT": soft, "HARD": hard}
@@ -82,7 +85,7 @@ def reconcile_once() -> dict:
     if not ops:
         tx["result"]["status"] = "NOOP"
 
-    # too many changes → safety stop
+    # too many changes -> safety stop
     elif len(ops) > MAX_OPS:
         tx["result"]["status"] = "FAILED"
         tx["result"]["error"] = f"too many ops: {len(ops)}"
