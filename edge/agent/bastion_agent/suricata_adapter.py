@@ -29,16 +29,50 @@ logger = logging.getLogger(__name__)
 
 def parse_eve_log(log_path: str = "/var/log/suricata/eve.json") -> list[dict]:
     """
-    Parse Suricata EVE JSON log and return Bastión Xólot events.
-
-    Enhancement implementation would:
-      1. Tail the EVE JSON log file
-      2. Parse alert-type entries
-      3. Map Suricata severity/category to Bastión severity
-      4. Build anomaly_detected or dns_blocked events
-      5. Correlate with existing device inventory
-
-    Returns empty list until implemented.
+    Minimal implementation:
+    - Reads ONE line from file
+    - Parses alert events
+    - Returns normalized Bastion event
     """
-    logger.debug("suricata_adapter.parse_eve_log() — not yet implemented (enhancement)")
-    return []
+
+    import json
+
+    events = []
+
+    try:
+        with open(log_path, "r") as f:
+            line = f.readline()
+
+            if not line:
+                return []
+
+            data = json.loads(line)
+
+            # Only handle Suricata alert events
+            if data.get("event_type") != "alert":
+                return []
+
+            mac = data.get("src_mac")
+            alert = data.get("alert", {})
+
+            # Map Suricata severity → Bastion severity
+            sev_map = {
+                1: "high",
+                2: "medium",
+                3: "low"
+            }
+
+            severity = sev_map.get(alert.get("severity"), "low")
+
+            event = {
+                "mac": mac,
+                "severity": severity,
+                "reason": alert.get("signature", "suricata alert")
+            }
+
+            events.append(event)
+
+    except Exception as e:
+        logger.error(f"Failed to parse EVE log: {e}")
+
+    return events
