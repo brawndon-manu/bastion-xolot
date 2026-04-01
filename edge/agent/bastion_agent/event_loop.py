@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Dict, Any
 from collections import defaultdict
 from bastion_agent.detection import handle_event
+from bastion_agent.suricata_adapter import parse_eve_log
 
 
 TEST_MACS = [
@@ -158,25 +159,26 @@ def main():
     print(f"{BOLD}{CYAN}Starting continuous detection loop...{RESET}\n")
 
     while True:
-        event = generate_event()
-        mac = event["mac"]
+        events = parse_eve_log("bastion_agent/sample_eve.jsonl")
+        for event in events:
+            mac = event["mac"]
 
-        result = apply_severity_policy(event)
+            result = apply_severity_policy(event)
 
-        status = result.get("result", {}).get("status", "UNKNOWN")
+            status = result.get("result", {}).get("status", "UNKNOWN")
 
-        # Update counters
-        event_count += 1
-        status_counts[status] += 1
-        mac_counter[mac] += 1
+            # Update counters
+            event_count += 1
+            status_counts[status] += 1
+            mac_counter[mac] += 1
 
-        pretty_print(event, result)
+            pretty_print(event, result)
 
-        # Print dashboard every 10 events
-        if event_count % 10 == 0:
-            print_dashboard()
+            # Print dashboard every 10 events
+            if event_count % 10 == 0:
+                print_dashboard()
 
-        time.sleep(3)
+    time.sleep(3)
 
 
 if __name__ == "__main__":
