@@ -12,21 +12,30 @@ class NftMembership:
     hard: set[str]
 
 
+import os
+
 def _run_nft_json(argv: list[str]) -> dict[str, Any]:
     """
     Run an nft command that returns JSON (-j) and parse it.
 
     Read-only usage only. Raises RuntimeError on failure with stderr included.
     """
-    # We call nft via sudo because listing sets may require root depending on system config.
+
+    # Use sudo only if not already root
+    if os.geteuid() == 0:
+        cmd = argv
+    else:
+        cmd = ["sudo", *argv]
+
     proc = subprocess.run(
-        ["sudo", *argv],
+        cmd,
         check=False,
         capture_output=True,
         text=True,
     )
+
     if proc.returncode != 0:
-        raise RuntimeError(f"nft command failed: {' '.join(argv)} :: {proc.stderr.strip()}")
+        raise RuntimeError(f"nft command failed: {' '.join(cmd)} :: {proc.stderr.strip()}")
 
     try:
         return json.loads(proc.stdout)
