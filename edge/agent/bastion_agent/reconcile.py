@@ -9,7 +9,6 @@ from bastion_agent.nft_state import get_quarantine_membership
 
 MAX_OPS = 10  # safety guardrail
 
-
 def _desired_membership() -> Dict[str, set[str]]:
     """
     Build desired membership sets from desired_state.json
@@ -23,10 +22,12 @@ def _desired_membership() -> Dict[str, set[str]]:
     for mac, info in devices.items():
         if not isinstance(info, dict):
             continue
-    s = info.get("state")
-    if s == "SOFT":
+
+        s = info.get("state")
+
+        if s == "SOFT":
             soft.add(mac)
-    elif s == "HARD":
+        elif s == "HARD":
             hard.add(mac)
 
     return {"SOFT": soft, "HARD": hard}
