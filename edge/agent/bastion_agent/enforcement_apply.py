@@ -44,8 +44,25 @@ def run_command(argv: list[str]) -> None:
     - Deleting an element that does not exist is treated as success.
     - Adding an element that already exists is treated as success. (nice-to-have)
     """
+import os
+
+def run_command(argv: list[str]) -> None:
+    """
+    Execute the command safely.
+
+    Idempotency rules:
+    - Deleting an element that does not exist is treated as success.
+    - Adding an element that already exists is treated as success.
+    """
+
+    # Only use sudo if not already root
+    if os.geteuid() == 0:
+        cmd = argv
+    else:
+        cmd = ["sudo", *argv]
+
     proc = subprocess.run(
-        ["sudo", *argv],
+        cmd,
         text=True,
         capture_output=True,
     )
