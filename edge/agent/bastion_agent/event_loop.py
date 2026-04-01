@@ -152,6 +152,33 @@ def print_dashboard():
 
     print("#" * 60 + "\n")
 
+def stream_eve_log(log_path: str):
+    with open(log_path, "r") as f:
+        f.seek(0, 2)  # move to end of file
+
+        while True:
+            line = f.readline()
+
+            if not line:
+                time.sleep(0.5)
+                continue
+
+            try:
+                data = json.loads(line)
+
+                # Only process alerts (real threats)
+                if data.get("event_type") != "alert":
+                    continue
+
+                alert = data.get("alert", {})
+                yield {
+                    "mac": "aa:bb:cc:dd:ee:21",  # placeholder mapping
+                    "severity": "high",
+                    "reason": alert.get("signature", "unknown alert")
+                }
+
+            except Exception:
+                continue
 
 def main():
     global event_count
@@ -160,34 +187,30 @@ def main():
 
     seen_events = set()
 
-    while True:
-        events = parse_eve_log("bastion_agent/sample_eve.jsonl")
-        for event in events:
-            event_id = (event["mac"], event["reason"])
+    for event in stream_eve_log("/var/log/suricata/eve.json"):
+        event_id = (event["mac"], event["reason"])
     
-            if event_id in seen_events:
-                continue
+        if event_id in seen_events:
+            continue
 
-            seen_events.add(event_id)
+        seen_events.add(event_id)
 
-            mac = event["mac"]
+        mac = event["mac"]
 
-            result = apply_severity_policy(event)
+        result = apply_severity_policy(event)
 
-            status = result.get("result", {}).get("status", "UNKNOWN")
+        status = result.get("result", {}).get("status", "UNKNOWN")
 
-            # Update counters
-            event_count += 1
-            status_counts[status] += 1
-            mac_counter[mac] += 1
+        # Update counters
+        event_count += 1
+        status_counts[status] += 1
+        mac_counter[mac] += 1
 
-            pretty_print(event, result)
+        pretty_print(event, result)
 
-            # Print dashboard every 10 events
-            if event_count % 10 == 0:
-                print_dashboard()
-
-        time.sleep(3)
+        # Print dashboard every 10 events
+        if event_count % 10 == 0:
+            print_dashboard()
 
 
 if __name__ == "__main__":
