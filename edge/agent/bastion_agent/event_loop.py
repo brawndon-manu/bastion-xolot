@@ -88,6 +88,24 @@ def apply_severity_policy(event: Dict[str, Any]) -> Dict[str, Any]:
 
     return handle_event(event)
 
+def resolve_mac(ip: str) -> str | None:
+    try:
+        with open("/proc/net/arp", "r") as f:
+            lines = f.readlines()[1:]  # skip header
+
+        for line in lines:
+            parts = line.split()
+            ip_addr = parts[0]
+            mac_addr = parts[3]
+
+            if ip_addr == ip and mac_addr != "00:00:00:00:00:00":
+                return mac_addr.lower()
+
+    except Exception:
+        pass
+
+    return None
+
 
 def pretty_print(event: Dict[str, Any], result: Dict[str, Any]) -> None:
     mac = event.get("mac")
@@ -224,3 +242,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
