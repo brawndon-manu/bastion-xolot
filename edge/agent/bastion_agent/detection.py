@@ -25,7 +25,7 @@ def handle_event(event: Dict[str, Any]) -> dict:
     if not mac:
         raise ValueError("event missing mac")
 
-    # 🧠 POLICY ENGINE (Phase 5 R2)
+    # POLICY ENGINE (Phase 5 R2)
     if severity == "high":
         return enforcement.request_quarantine_hard(
             mac=mac,
@@ -40,7 +40,7 @@ def handle_event(event: Dict[str, Any]) -> dict:
             actor="detection"
         )
 
-    # LOW severity → ignore
+    # LOW severity -> ignore
     return {
         "result": {
             "status": "IGNORED",
