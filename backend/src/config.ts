@@ -47,6 +47,11 @@ const DB_PATH =
  * Can be overriden for testing or container deployment.
  */
 const API_PORT = parseInt(process.env.API_PORT || "3000", 10);
+const MONITOR_ONLY = process.env.MONITOR_ONLY !== "false";
+const AUTO_QUARANTINE_THRESHOLD = parseInt(
+    process.env.AUTO_QUARANTINE_THRESHOLD || "50",
+    10
+);
 
 /**
  * Secret used for signing authentication tokens
@@ -82,5 +87,7 @@ export const config = Object.freeze({
     NODE_ENV,
     DB_PATH,
     API_PORT,
+    MONITOR_ONLY,
+    AUTO_QUARANTINE_THRESHOLD,
     AUTH_SECRET,
 });
