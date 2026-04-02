@@ -1,127 +1,276 @@
-import { createAlert } from "./alert_service";
-import { updateDeviceRisk, getDevice } from "./device_service";
+import { AlertRecord, createAlert } from "./alert_service";
+import { getDevice, updateDeviceRisk } from "./device_service";
 import { quarantineDevice } from "./enforcement_service";
 import { broadcast } from "../realtime/websocket";
+import { explainSecurityEvent } from "./plain_english";
+import {
+    getRecentAnomalies,
+    getRecentEventsByTypes,
+    ingestEvent,
+    StoredAnomaly,
+    StoredEvent,
+} from "./event_service";
+import { config } from "../config";
 
-
+/**
+ * Results returned by the correlation engine
+ * 
+ * Represents EVERYTHING that changed as a result of processing an event.
+ * This allows:
+ *  - API responses
+ *  - WebSocket broadcasting
+ *  - Frontend updates
+ */
 type CorrelationResult = {
-    alert?: any;
-    enforcement?: any;
-    risk_score?: number;
-    device?: any;
+    event: StoredEvent;         // Persisted event record
+    alert?: AlertRecord;        // Most recent alert (for convenience)
+    alerts: AlertRecord[];      // All alerts generated during processing
+    anomaly?: StoredAnomaly;    // Behavioral anomaly (if detected)
+    enforcement?: unknown;      // Enforcement action (quarantine, etc.)
+    risk_score?: number;        // Updated device risk score
+    device?: unknown;           // Updated device state
+};
+
+/**
+ * Creates alert for behavioral anomalies
+ * 
+ * Used when anomaly detection system flags unsual behavior
+ */
+function createBehavioralAlert(deviceId: string, anomaly: StoredAnomaly): AlertRecord {
+    return createAlert({
+        device_id: deviceId,
+        type: anomaly.type,
+        severity: anomaly.severity,
+        title: "Behavioral anomaly detected",
+        explanation: `${explainSecurityEvent("anomaly", anomaly)} ${anomaly.summary}.`,
+        evidence: anomaly.evidence,
+        confidence: Math.min(0.99, anomaly.score / 50), // Normalize anomaly score -> confidence
+    });
 }
 
 /**
- * Main intelligence engine of Bastion Xolot
+ * Creates alert when multiple signals indicate a stronger threat
  * 
- * Takes a raw event + device ID
- * Determines:
- *  - Is this suspicious?
- *  - Should we raise risk score?
- *  - Should we create an alert?
- *  - Should we enforce protection?
+ * This is TRUE correlation (Phase 5):
+ *  - Combines anomalies + events
+ *  - Produces higher-condifence alert
  */
-export async function processEvent(event: any, deviceId: string): Promise<CorrelationResult> {
-    let riskDelta = 0;
-    let alert = null;
-    let enforcement = null;
+function createCorrelatedThreatAlert(
+    deviceId: string,
+    event: Record<string, unknown>,
+    anomalies: StoredAnomaly[]
+): AlertRecord {
+    return createAlert({
+        device_id: deviceId,
+        type: "correlated_threat",
+        severity: "high",
+        title: "Correlated threat behavior detected",
+        explanation: `${explainSecurityEvent("correlated_threat", event)} Recent anomaly count: ${anomalies.length}.`,
+        evidence: JSON.stringify({ event, anomalies }),
+        confidence: 0.96,
+    });
+}
+
+/**
+ * ==================================
+ * MAIN CORRELATION ENGINE
+ * ==================================
+ * 
+ * This is the core intelligence layer of Bastion Xolot.
+ * 
+ * Responsibilities:
+ *  - Ingest event
+ *  - Detect suspicious behavior
+ *  - Update device risk score
+ *  - Generate alerts
+ *  - Correlate multiple signals
+ *  - Trigger enforcement
+ *  - Broadcasts results in real-time
+ */
+export async function processEvent(event: Record<string, unknown>, deviceId: string): Promise<CorrelationResult> {
+    
+    /**
+     * Persist event and run anomaly detection
+     * 
+     * ingestEvent:
+     *  - Stores raw event
+     *  - Runs anomaly detection
+     *  - Returns structured result
+     */
+    const ingestion = ingestEvent(event, deviceId);
+
+    let riskDelta = 0;                      // Risk score increment
+    const alerts: AlertRecord[] = [];       // Alerts generated during processing
+    let enforcement: unknown = null;        // Enforcement action (if triggered)
 
     /**
-     * RULE 1 - Blocked DNS request
+     * ==============================
+     * RULE 1 - DNS BLOCK
+     * ==============================
      */
     if (event.type === "dns_block") {
         riskDelta = 10;
 
-        alert = await createAlert({
+        alerts.push(createAlert({
             device_id: deviceId,
-            type: event.type,
+            type: String(event.type),
             severity: "medium",
             title: `Blocked domain: ${event.domain || "unknown"}`,
-            explanation: `Device attempted to access a known malicious domain (${event.domain || "unknown"}). This may indicate malware or phishing activity.`,
+            explanation: `Device attempted to access a blocked domain (${event.domain || "unknown"}). ${explainSecurityEvent("dns_block", event)}`,
             evidence: JSON.stringify(event),
             confidence: 0.8
-        });
+        }));
     }
 
     /**
-     * RULE 2 - Suspicious outbound connection
+     * ==============================
+     * RULE 2 - SUSPICIOUS CONNECTION
+     * ==============================
      */
     if (event.type === "suspicious_connection") {
         riskDelta = 20;
 
-        alert = await createAlert({
+        alerts.push(createAlert({
             device_id: deviceId,
-            type: event.type,
+            type: String(event.type),
             severity: "high",
             title: "Suspicious outbound connection detected",
-            explanation: "Connection to known malicious infrastructure",
+            explanation: "A device initiated an outbound connection that matched a suspicious destination pattern.",
             evidence: JSON.stringify(event),
             confidence: 0.9
-        });
+        }));
     }
 
     /**
-     * RULE 3 - IDS Alert
+     * ==============================
+     * RULE 3 - IDS ALERT
+     * ==============================
      */
     if (event.type === "ids_alert") {
         riskDelta = 25;
 
-        alert = await createAlert({
+        alerts.push(createAlert({
             device_id: deviceId,
-            type: event.type,
+            type: String(event.type),
             severity: "high",
             title: `IDS Alert: ${event.signature || "Unknown threat"}`,
-            explanation: "Intrusion detection system flagged this traffic as malicious.",
+            explanation: explainSecurityEvent("ids_alert", event),
             evidence: JSON.stringify(event),
             confidence: 0.9
-        });
+        }));
     }
 
+    /**
+     * ==============================
+     * RULE 4 - BEHAVIORAL ANOMALY
+     * ==============================
+     */
+    if (ingestion.anomaly) {
+        // Higher anomaly score -> higher risk
+        riskDelta += ingestion.anomaly.score >= 40 ? 25 : 15;
+        alerts.push(createBehavioralAlert(deviceId, ingestion.anomaly));
+    }
+
+    // No detection -> exist early
     if (riskDelta === 0) {
-        return {};
-    }
-
-    updateDeviceRisk(deviceId, riskDelta);
-    const device = getDevice(deviceId);
-
-    /**
-     * RULE 4 - Correlated threat escalation
-     */
-    if (event.type === "dns_block" && device && device.risk_score > 20) {
-        alert = await createAlert({
-            device_id: deviceId,
-            type: "correlated_threat",
-            severity: "high",
-            title: "Escalating threat behavior detected",
-            explanation: "Device shows repeated malicious DNS activity and elevated risk score.",
-            evidence: JSON.stringify(event),
-            confidence: 0.95
-        });
+        return {
+            event: ingestion.event,
+            alerts,
+            anomaly: ingestion.anomaly,
+        };
     }
 
     /**
-     * RULE 5 - Automatic enforcement
+     * ==============================
+     * UPDATE DEVICE RISK
+     * ==============================
      */
-    if (device && device.risk_score >= 50 && device.status !== "quarantined") {
+    let device = updateDeviceRisk(deviceId, riskDelta) || getDevice(deviceId);
+
+    /**
+     * ==============================
+     * FETCH CONTEXT (for correlation)
+     * ==============================
+     */
+    const recentAnomalies = getRecentAnomalies(
+        deviceId,
+        Date.now() - (60 * 60 * 1000)
+    );
+    const recentIdsSignals = getRecentEventsByTypes(
+        deviceId,
+        ["ids_alert", "suspicious_connection"],
+        Date.now() - (60 * 60 * 1000)
+    );
+
+    /**
+     * ==============================
+     * RULE 5 - CORRELATED THREAT
+     * ==============================
+     */
+    if (
+        device &&
+        ((event.type === "dns_block" && device.risk_score > 20) ||
+            (event.type === "ids_alert" && recentAnomalies.length > 0) ||
+            (ingestion.anomaly && recentIdsSignals.length > 0))
+    ) {
+        alerts.push(createCorrelatedThreatAlert(deviceId, event, recentAnomalies));
+    }
+
+    /**
+     * ==============================
+     * RULE 6 - AUTOMATIC ENFORCEMENT
+     * ==============================
+     */
+    if (
+        device &&
+        device.risk_score >= config.AUTO_QUARANTINE_THRESHOLD &&
+        device.status !== "quarantined"
+    ) {
         enforcement = quarantineDevice(
             deviceId,
-            "Risk score exceeded threshold"
+            "Risk score exceeded threshold",
+            {
+                initiated_by: "system",
+                evidence: JSON.stringify({
+                    event,
+                    recentAnomalies,
+                    recentIdsSignals,
+                    risk_score: device.risk_score,
+                }),
+            }
+        );
+
+        // Refresh device state after enforcement
+        device = getDevice(deviceId);
+    }
+
+    /**
+     * ==============================
+     * REAL-TIME BROADCAST
+     * ==============================
+     */
+    for (const alert of alerts) {
+        broadcast("alert.created", alert);
+    }
+
+    if (enforcement && typeof enforcement === "object" && enforcement !== null && "status" in enforcement) {
+        const status = (enforcement as { status: string }).status;
+        broadcast(
+            status === "simulated" ? "device.monitor_only" : "device.quarantined",
+            enforcement
         );
     }
 
     /**
-     * REAL-TIME BROADCAST
+     * ==============================
+     * RETURN RESULT
+     * ==============================
      */
-    if (alert) {
-        broadcast("alert.created", alert);
-    }
-
-    if (enforcement) {
-        broadcast("device.quarantined", enforcement);
-    }
-
     return {
-        alert,
+        event: ingestion.event,
+        alert: alerts[alerts.length - 1],   // most recent alert
+        alerts,
+        anomaly: ingestion.anomaly,
         enforcement,
         risk_score: device?.risk_score,
         device
