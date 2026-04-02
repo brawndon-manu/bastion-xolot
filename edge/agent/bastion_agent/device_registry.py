@@ -78,6 +78,15 @@ def update_device(mac: str, ip: str | None, severity: str | None = None) -> Dict
     device["event_count"] += 1
     if severity in device["severity_counts"]:
         device["severity_counts"][severity] += 1
+    
+    # compute risk score
+    low = device["severity_counts"]["low"]
+    medium = device["severity_counts"]["medium"]
+    high = device["severity_counts"]["high"]
+
+    score = (high * 10) + (medium * 5) + (low * 1)
+
+    device["risk_score"] = min(score, 100)
 
     data[mac] = device
     _save(data)
