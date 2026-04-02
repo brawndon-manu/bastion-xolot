@@ -227,7 +227,7 @@ def main():
         mac = event["mac"]
         ip = event.get("ip")
 
-        update_device(mac, ip)
+        update_device(mac, ip, event["severity"])
 
         result = apply_severity_policy(event)
 
