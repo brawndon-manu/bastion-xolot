@@ -31,6 +31,17 @@ def update_device(mac: str, ip: str | None, severity: str | None = None) -> Dict
 
     now = datetime.utcnow().isoformat()
 
+    # TODO (Phase 6+): Handle "unknown" MAC addresses properly.
+    # Currently, unresolved IP → MAC mappings default to "unknown",
+    # which causes all unidentified devices to collapse into a single entry.
+    # This breaks per-device intelligence, risk scoring, and enforcement accuracy.
+    #
+    # Future fix ideas:
+    # - Use IP as temporary key when MAC is unavailable
+    # - Retry ARP resolution before fallback
+    # - Maintain separate "unresolved devices" registry
+    # - Backfill MAC once discovered
+
     device = data.get(mac, {
         "mac": mac,
         "name": "unknown",
@@ -47,6 +58,20 @@ def update_device(mac: str, ip: str | None, severity: str | None = None) -> Dict
             "high": 0
         }
     })
+
+    # ensure new fields exist (schema migration safety)
+    if "severity_counts" not in device:
+        device["severity_counts"] = {
+            "low": 0,
+            "medium": 0,
+            "high": 0
+        }
+
+    if "risk_score" not in device:
+        device["risk_score"] = 0
+
+    if "type" not in device:
+        device["type"] = "unknown"
 
     device["last_seen"] = now
     device["ip"] = ip or device.get("ip")
