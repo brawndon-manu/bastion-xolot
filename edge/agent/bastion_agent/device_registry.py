@@ -34,14 +34,20 @@ def update_device(mac: str, ip: str | None) -> Dict[str, Any]:
     device = data.get(mac, {
         "mac": mac,
         "name": "unknown",
+        "type": "unknown",
         "first_seen": now,
         "last_seen": now,
         "ip": ip,
         "event_count": 0,
-        "state": "NONE"
+        "state": "NONE",
+        "risk_score": 0,
+        "severity_counts": {
+            "low": 0,
+            "medium": 0,
+            "high": 0
+        }
     })
 
-    # update fields
     device["last_seen"] = now
     device["ip"] = ip or device.get("ip")
     device["event_count"] += 1
