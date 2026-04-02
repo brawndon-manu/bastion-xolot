@@ -26,7 +26,7 @@ def _save(data: Dict[str, Any]) -> None:
         json.dump(data, f, indent=2)
 
 
-def update_device(mac: str, ip: str | None) -> Dict[str, Any]:
+def update_device(mac: str, ip: str | None, severity: str | None = None) -> Dict[str, Any]:
     data = _load()
 
     now = datetime.utcnow().isoformat()
@@ -51,6 +51,8 @@ def update_device(mac: str, ip: str | None) -> Dict[str, Any]:
     device["last_seen"] = now
     device["ip"] = ip or device.get("ip")
     device["event_count"] += 1
+    if severity in device["severity_counts"]:
+        device["severity_counts"][severity] += 1
 
     data[mac] = device
     _save(data)
