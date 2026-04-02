@@ -2,9 +2,17 @@ from __future__ import annotations
 
 from typing import Dict, Any
 from bastion_agent import enforcement
+from bastion_agent.config import PROTECTED_MACS
 
 
 def handle_event(event: Dict[str, Any]) -> dict:
+    if mac and mac.lower() in PROTECTED_MACS:
+        return {
+            "result": {
+            "status": "IGNORED",
+            "reason": "protected device"
+        }
+    }
     """
     Entry point for detection events.
 
@@ -34,12 +42,12 @@ def handle_event(event: Dict[str, Any]) -> dict:
         )
 
     elif severity == "medium":
-        return enforcement.request_quarantine_soft(
-            mac=mac,
-            reason=reason,
-            actor="detection"
-        )
-
+        return {
+            "result": {
+            "status": "IGNORED",
+            "reason": "medium severity (monitor only)"
+        }
+    }
     # LOW severity -> ignore
     return {
         "result": {
