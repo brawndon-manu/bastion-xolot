@@ -9,6 +9,15 @@ NOTE: Interface names (LAN_IFACE, WAN_IFACE) must be set by the
 """
 
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+PROTECTED_MACS = set(
+    mac.strip().lower()
+    for mac in os.getenv("PROTECTED_MACS", "").split(",")
+    if mac.strip()
+)
 
 
 # ═══════════════════════════════════════════
