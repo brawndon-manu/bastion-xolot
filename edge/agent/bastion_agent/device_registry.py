@@ -219,3 +219,18 @@ def translate_alert_reason(reason: str) -> str:
         "This alert indicates unusual network behavior, but additional context is "
         "needed to determine whether it is truly malicious."
     )
+
+def recommend_action(device: Dict[str, Any]) -> str:
+    risk_score = device.get("risk_score", 0)
+    severity_counts = device.get("severity_counts", {})
+
+    medium = severity_counts.get("medium", 0)
+    high = severity_counts.get("high", 0)
+
+    if high > 0:
+        return "Recommendation: Quarantine this device immediately and investigate its recent activity."
+
+    if risk_score >= 20 or medium >= 3:
+        return "Recommendation: Monitor this device closely. If suspicious activity continues, quarantine may be necessary."
+
+    return "Recommendation: No immediate action is required. Continue monitoring this device."
