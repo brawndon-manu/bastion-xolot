@@ -30,9 +30,9 @@ logger = logging.getLogger(__name__)
 def parse_eve_log(log_path: str = "/var/log/suricata/eve.json") -> list[dict]:
     """
     Minimal implementation:
-    - Reads ONE line from file
-    - Parses alert events
-    - Returns normalized Bastion event
+    - Reads alert events from file
+    - Parses Suricata alert events
+    - Returns normalized Bastion events
     """
 
     import json
@@ -41,37 +41,45 @@ def parse_eve_log(log_path: str = "/var/log/suricata/eve.json") -> list[dict]:
 
     try:
         with open(log_path, "r") as f:
-            line = f.readline()
+            for line in f:
+                if not line.strip():
+                    continue
 
-            if not line:
-                return []
+                try:
+                    data = json.loads(line)
+                except json.JSONDecodeError:
+                    logger.warning("Skipping invalid JSON line in EVE log")
+                    continue
 
-            data = json.loads(line)
+                # Only handle Suricata alert events
+                if data.get("event_type") != "alert":
+                    continue
 
-            # Only handle Suricata alert events
-            if data.get("event_type") != "alert":
-                return []
+                mac = data.get("src_mac")
+                alert = data.get("alert", {})
 
-            mac = data.get("src_mac")
-            alert = data.get("alert", {})
+                if not mac:
+                    continue
 
-            # Map Suricata severity → Bastion severity
-            sev_map = {
-                1: "high",
-                2: "medium",
-                3: "low"
-            }
+                # Map Suricata severity → Bastion severity
+                sev_map = {
+                    1: "high",
+                    2: "medium",
+                    3: "low"
+                }
 
-            severity = sev_map.get(alert.get("severity"), "low")
+                severity = sev_map.get(alert.get("severity"), "low")
 
-            event = {
-                "mac": mac,
-                "severity": severity,
-                "reason": alert.get("signature", "suricata alert")
-            }
+                event = {
+                    "mac": mac,
+                    "severity": severity,
+                    "reason": alert.get("signature", "suricata alert")
+                }
 
-            events.append(event)
+                events.append(event)
 
+    except FileNotFoundError:
+        logger.warning(f"EVE log not found: {log_path}")
     except Exception as e:
         logger.error(f"Failed to parse EVE log: {e}")
 
