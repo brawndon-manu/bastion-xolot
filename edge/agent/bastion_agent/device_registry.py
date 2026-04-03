@@ -181,3 +181,41 @@ def summarize_top_offender(data: Dict[str, Any]) -> str:
         f"The highest-risk device is {top_mac}. It has triggered {event_count} events "
         f"and currently has a risk score of {risk_score} because {reason}."
     )
+
+def translate_alert_reason(reason: str) -> str:
+    reason_lower = reason.lower()
+
+    if "ssdp amplification" in reason_lower:
+        return (
+            "This device may be sending unusual discovery traffic that can resemble "
+            "behavior used in denial-of-service attacks."
+        )
+
+    if "session traversal utilities for nat" in reason_lower or "stun" in reason_lower:
+        return (
+            "This device is using NAT traversal traffic, which is often normal for "
+            "voice, video, or real-time communication apps."
+        )
+
+    if "dns over https" in reason_lower:
+        return (
+            "This device is contacting a DNS-over-HTTPS service, which can be normal "
+            "but may reduce visibility into DNS activity."
+        )
+
+    if "spotify" in reason_lower:
+        return (
+            "This device is generating Spotify-related network traffic, which is "
+            "usually normal media application activity."
+        )
+
+    if "discord" in reason_lower:
+        return (
+            "This device is generating Discord-related network traffic, which is "
+            "commonly associated with chat, voice, or media features."
+        )
+
+    return (
+        "This alert indicates unusual network behavior, but additional context is "
+        "needed to determine whether it is truly malicious."
+    )
