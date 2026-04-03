@@ -254,3 +254,12 @@ def build_intelligence_snapshot(data: Dict[str, Any]) -> Dict[str, Any]:
         "top_offender": summarize_top_offender(data),
         "top_offender_recommendation": recommend_action(top_device)
     }
+
+def render_intelligence_report(snapshot: Dict[str, Any]) -> str:
+    return (
+        "Bastion Intelligence Report\n"
+        "---------------------------\n"
+        f"System Summary: {snapshot.get('system_summary', 'N/A')}\n\n"
+        f"Top Offender: {snapshot.get('top_offender', 'N/A')}\n\n"
+        f"Recommendation: {snapshot.get('top_offender_recommendation', 'N/A')}"
+    )
