@@ -3,10 +3,13 @@ from __future__ import annotations
 import time
 import random
 import json
+import subprocess
 from datetime import datetime
 from typing import Dict, Any
 from collections import defaultdict
 from bastion_agent.detection import handle_event
+from bastion_agent.suricata_adapter import parse_eve_log
+from bastion_agent.device_registry import update_device
 
 
 TEST_MACS = [
@@ -87,6 +90,20 @@ def apply_severity_policy(event: Dict[str, Any]) -> Dict[str, Any]:
 
     return handle_event(event)
 
+def resolve_mac(ip: str) -> str | None:
+    try:
+        output = subprocess.check_output(["ip", "neigh", "show", ip], text=True)
+        parts = output.split()
+
+        if "lladdr" in parts:
+            mac_index = parts.index("lladdr") + 1
+            return parts[mac_index]
+
+    except Exception:
+        return None
+
+    return None
+
 
 def pretty_print(event: Dict[str, Any], result: Dict[str, Any]) -> None:
     mac = event.get("mac")
@@ -151,15 +168,66 @@ def print_dashboard():
 
     print("#" * 60 + "\n")
 
+def stream_eve_log(log_path: str):
+    with open(log_path, "r") as f:
+        f.seek(0, 2)  # move to end of file
+
+        while True:
+            line = f.readline()
+
+            if not line:
+                time.sleep(0.5)
+                continue
+
+            try:
+                data = json.loads(line)
+
+                # Only process alerts (real threats)
+                if data.get("event_type") != "alert":
+                    continue
+
+                alert = data.get("alert", {})
+                sev = alert.get("severity", 3)
+
+                # Map Suricata severity to our system
+                if sev == 1:
+                    severity = "high"
+                elif sev == 2:
+                    severity = "medium"
+                else:
+                    severity = "low"
+                
+                src_ip = data.get("src_ip")
+                mac = resolve_mac(src_ip) or "unknown"
+                yield {
+                    "mac": mac,
+                    "ip": src_ip,
+                    "severity": severity,
+                    "reason": alert.get("signature", "unknown alert")
+                }
+
+            except Exception:
+                continue
 
 def main():
     global event_count
 
     print(f"{BOLD}{CYAN}Starting continuous detection loop...{RESET}\n")
 
-    while True:
-        event = generate_event()
+    seen_events = set()
+
+    for event in stream_eve_log("/var/log/suricata/eve.json"):
+        event_id = (event["mac"], event["reason"])
+    
+        if event_id in seen_events:
+            continue
+
+        seen_events.add(event_id)
+
         mac = event["mac"]
+        ip = event.get("ip")
+
+        update_device(mac, ip, event["severity"])
 
         result = apply_severity_policy(event)
 
@@ -176,8 +244,7 @@ def main():
         if event_count % 10 == 0:
             print_dashboard()
 
-        time.sleep(3)
-
 
 if __name__ == "__main__":
     main()
+    
