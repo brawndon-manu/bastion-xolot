@@ -234,3 +234,23 @@ def recommend_action(device: Dict[str, Any]) -> str:
         return "Recommendation: Monitor this device closely. If suspicious activity continues, quarantine may be necessary."
 
     return "Recommendation: No immediate action is required. Continue monitoring this device."
+
+def build_intelligence_snapshot(data: Dict[str, Any]) -> Dict[str, Any]:
+    if not data:
+        return {
+            "system_summary": "No device activity has been recorded yet.",
+            "top_offender": "No device activity has been recorded yet.",
+            "top_offender_recommendation": "Recommendation: No immediate action is required."
+        }
+
+    top_mac = max(
+        data,
+        key=lambda mac: data[mac].get("risk_score", 0)
+    )
+    top_device = data[top_mac]
+
+    return {
+        "system_summary": summarize_system(data),
+        "top_offender": summarize_top_offender(data),
+        "top_offender_recommendation": recommend_action(top_device)
+    }
