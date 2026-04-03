@@ -34,6 +34,7 @@ Satisfies Requirement 1.6:
 import json
 import logging
 from datetime import datetime, timezone
+from bastion_agent.detection import handle_event
 
 from bastion_agent.baseline import get_baseline, is_baseline_stable
 from bastion_agent.events import (
@@ -85,7 +86,25 @@ def _enforcement_for_severity(severity: str) -> dict | None:
         return {"state": "SOFT", "actor": "anomaly"}
     return None
 
-
+def _route_to_detection(mac: str, severity: str, reason: str) -> None:
+    """
+    Send a normalized event into the central detection policy engine.
+    Fail open: alert generation should continue even if policy routing fails.
+    """
+    try:
+        result = handle_event({
+            "mac": mac,
+            "severity": severity,
+            "reason": reason,
+        })
+        logger.info(
+            "Detection policy result for %s: %s",
+            mac,
+            result.get("result", {}).get("status", "unknown"),
+        )
+    except Exception:
+        logger.exception("Failed routing anomaly signal into detection engine for %s", mac)
+        
 def _check_volume_spike(
     flow: dict, baseline: dict, mac: str
 ) -> list[dict]:
@@ -99,6 +118,12 @@ def _check_volume_spike(
 
     if severity:
         enforcement = _enforcement_for_severity(severity)
+
+        _route_to_detection(
+            mac,
+            severity,
+            f"volume_spike z={z:.2f} bytes_out={current}"
+        )
 
         event = build_anomaly_detected(mac, {
             "anomaly_type": "volume_spike",
@@ -167,6 +192,12 @@ def _check_connection_spike(
 
     if severity:
         enforcement = _enforcement_for_severity(severity)
+
+        _route_to_detection(
+            mac,
+            severity,
+            f"connection_spike z={z:.2f} connections={current}"
+        )
 
         event = build_anomaly_detected(mac, {
             "anomaly_type": "connection_spike",
@@ -246,6 +277,13 @@ def _check_unusual_destinations(
         severity = "low"
 
     enforcement = _enforcement_for_severity(severity)
+
+    _route_to_detection(
+        mac,
+        severity,
+        f"unusual_destinations count={count}"
+    )
+
     sample_dests = sorted(new_dests)[:5]  # show up to 5 examples
 
     event = build_anomaly_detected(mac, {
