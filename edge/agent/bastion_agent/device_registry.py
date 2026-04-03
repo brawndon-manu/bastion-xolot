@@ -92,3 +92,25 @@ def update_device(mac: str, ip: str | None, severity: str | None = None) -> Dict
     _save(data)
 
     return device
+
+def summarize_device(device: Dict[str, Any]) -> str:
+    mac = device.get("mac", "unknown")
+    event_count = device.get("event_count", 0)
+    risk_score = device.get("risk_score", 0)
+
+    severity_counts = device.get("severity_counts", {})
+    low = severity_counts.get("low", 0)
+    medium = severity_counts.get("medium", 0)
+    high = severity_counts.get("high", 0)
+
+    if high > 0:
+        severity_note = "High-severity alerts have been observed."
+    elif medium > 0:
+        severity_note = "Medium-severity alerts have been observed."
+    else:
+        severity_note = "Activity has been low severity so far."
+
+    return (
+        f"Device {mac} has triggered {event_count} events and currently has "
+        f"a risk score of {risk_score}. {severity_note}"
+    )
