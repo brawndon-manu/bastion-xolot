@@ -256,10 +256,15 @@ def build_intelligence_snapshot(data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 def render_intelligence_report(snapshot: Dict[str, Any]) -> str:
+    recommendation = snapshot.get("top_offender_recommendation", "No immediate action is required.")
+
+    if recommendation.startswith("Recommendation: "):
+        recommendation = recommendation[len("Recommendation: "):]
+
     return (
         "Bastion Intelligence Report\n"
         "---------------------------\n"
         f"System Summary: {snapshot.get('system_summary', 'N/A')}\n\n"
         f"Top Offender: {snapshot.get('top_offender', 'N/A')}\n\n"
-        f"Recommendation: {snapshot.get('top_offender_recommendation', 'N/A')}"
+        f"Recommendation: {recommendation}"
     )
