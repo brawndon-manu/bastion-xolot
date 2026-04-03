@@ -114,3 +114,40 @@ def summarize_device(device: Dict[str, Any]) -> str:
         f"Device {mac} has triggered {event_count} events and currently has "
         f"a risk score of {risk_score}. {severity_note}"
     )
+
+def summarize_system(data: Dict[str, Any]) -> str:
+    if not data:
+        return "No device activity has been recorded yet."
+
+    total_devices = len(data)
+    total_events = sum(device.get("event_count", 0) for device in data.values())
+    highest_risk = max(device.get("risk_score", 0) for device in data.values())
+
+    top_mac = max(
+        data,
+        key=lambda mac: data[mac].get("risk_score", 0)
+    )
+    top_device = data[top_mac]
+
+    medium_devices = sum(
+        1 for device in data.values()
+        if device.get("severity_counts", {}).get("medium", 0) > 0
+    )
+
+    high_devices = sum(
+        1 for device in data.values()
+        if device.get("severity_counts", {}).get("high", 0) > 0
+    )
+
+    if high_devices > 0:
+        overall = "Your network is at elevated risk."
+    elif medium_devices > 0:
+        overall = "Your network is mostly stable, but some suspicious activity has been observed."
+    else:
+        overall = "Your network is currently stable with only low-severity activity observed."
+
+    return (
+        f"{overall} "
+        f"{total_devices} devices have generated {total_events} total events. "
+        f"The highest-risk device is {top_mac} with a risk score of {highest_risk}."
+    )
