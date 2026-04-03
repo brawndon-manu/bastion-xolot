@@ -151,3 +151,33 @@ def summarize_system(data: Dict[str, Any]) -> str:
         f"{total_devices} devices have generated {total_events} total events. "
         f"The highest-risk device is {top_mac} with a risk score of {highest_risk}."
     )
+
+def summarize_top_offender(data: Dict[str, Any]) -> str:
+    if not data:
+        return "No device activity has been recorded yet."
+
+    top_mac = max(
+        data,
+        key=lambda mac: data[mac].get("risk_score", 0)
+    )
+    device = data[top_mac]
+
+    risk_score = device.get("risk_score", 0)
+    event_count = device.get("event_count", 0)
+    severity_counts = device.get("severity_counts", {})
+
+    low = severity_counts.get("low", 0)
+    medium = severity_counts.get("medium", 0)
+    high = severity_counts.get("high", 0)
+
+    if high > 0:
+        reason = "high-severity alerts have been observed"
+    elif medium > 0:
+        reason = "repeated medium-severity alerts have been observed"
+    else:
+        reason = "it has generated the most low-severity activity"
+
+    return (
+        f"The highest-risk device is {top_mac}. It has triggered {event_count} events "
+        f"and currently has a risk score of {risk_score} because {reason}."
+    )
