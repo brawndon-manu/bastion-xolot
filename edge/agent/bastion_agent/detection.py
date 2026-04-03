@@ -6,13 +6,6 @@ from bastion_agent.config import PROTECTED_MACS
 
 
 def handle_event(event: Dict[str, Any]) -> dict:
-    if mac and mac.lower() in PROTECTED_MACS:
-        return {
-            "result": {
-            "status": "IGNORED",
-            "reason": "protected device"
-        }
-    }
     """
     Entry point for detection events.
 
@@ -27,11 +20,22 @@ def handle_event(event: Dict[str, Any]) -> dict:
     """
 
     mac = event.get("mac")
-    severity = event.get("severity", "low")
+    severity = event.get("severity", "low").lower()
     reason = event.get("reason", "unknown")
 
     if not mac:
         raise ValueError("event missing mac")
+
+    mac = mac.lower()
+
+    # protected device check
+    if mac in {m.lower() for m in PROTECTED_MACS}:
+        return {
+            "result": {
+                "status": "IGNORED",
+                "reason": "protected device"
+            }
+        }
 
     # POLICY ENGINE (Phase 5 R2)
     if severity == "high":
@@ -44,10 +48,11 @@ def handle_event(event: Dict[str, Any]) -> dict:
     elif severity == "medium":
         return {
             "result": {
-            "status": "IGNORED",
-            "reason": "medium severity (monitor only)"
+                "status": "IGNORED",
+                "reason": "medium severity (monitor only)"
+            }
         }
-    }
+
     # LOW severity -> ignore
     return {
         "result": {
