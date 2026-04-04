@@ -93,7 +93,8 @@ def _route_to_detection(mac: str, severity: str, reason: str) -> None:
     """
     try:
         result = handle_event({
-            "mac": mac,
+            "device_id": mac,
+            "device_id_type": "mac",
             "severity": severity,
             "reason": reason,
         })

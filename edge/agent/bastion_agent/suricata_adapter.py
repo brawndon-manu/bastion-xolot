@@ -57,13 +57,16 @@ def parse_eve_log(log_path: str = "/var/log/suricata/eve.json") -> list[dict]:
 
                 alert = data.get("alert", {})
 
-                # Prefer MAC if present, otherwise fall back to source IP
-                mac = data.get("src_mac") or data.get("src_ip")
-
-                if not mac:
+                if data.get("src_mac"):
+                    device_id = data.get("src_mac")
+                    device_id_type = "mac"
+                elif data.get("src_ip"):
+                    device_id = data.get("src_ip")
+                    device_id_type = "ip"
+                else:
                     continue
 
-                # Map Suricata severity → Bastion severity
+                # Map Suricata severity to Bastion severity
                 sev_map = {
                     1: "high",
                     2: "medium",
@@ -73,7 +76,8 @@ def parse_eve_log(log_path: str = "/var/log/suricata/eve.json") -> list[dict]:
                 severity = sev_map.get(alert.get("severity"), "low")
 
                 event = {
-                    "mac": mac,
+                    "device_id": device_id,
+                    "device_id_type": device_id_type,
                     "severity": severity,
                     "reason": alert.get("signature", "suricata alert")
                 }
