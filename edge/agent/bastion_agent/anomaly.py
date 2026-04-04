@@ -34,6 +34,7 @@ Satisfies Requirement 1.6:
 import json
 import logging
 from datetime import datetime, timezone
+from bastion_agent.detection import handle_event
 
 from bastion_agent.baseline import get_baseline, is_baseline_stable
 from bastion_agent.events import (
@@ -85,7 +86,48 @@ def _enforcement_for_severity(severity: str) -> dict | None:
         return {"state": "SOFT", "actor": "anomaly"}
     return None
 
+def _should_alert(severity: str) -> bool:
+    """Only medium and high anomalies should generate user-facing alerts."""
+    return severity in {"medium", "high"}
 
+
+def _confidence_from_z(z: float, severity: str) -> float:
+    """Map anomaly strength into a more stable confidence score."""
+    if severity == "high":
+        return min(0.80 + max(z - _Z_HIGH, 0) * 0.03, 0.95)
+    if severity == "medium":
+        return min(0.65 + max(z - _Z_MEDIUM, 0) * 0.04, 0.85)
+    return min(0.45 + max(z - _Z_LOW, 0) * 0.03, 0.60)
+
+
+def _confidence_from_count(count: int, severity: str) -> float:
+    """Map unusual-destination count into a stable confidence score."""
+    if severity == "high":
+        return min(0.80 + max(count - _NEW_DEST_HIGH, 0) * 0.02, 0.95)
+    if severity == "medium":
+        return min(0.65 + max(count - _NEW_DEST_WARN, 0) * 0.03, 0.85)
+    return 0.50
+
+def _route_to_detection(mac: str, severity: str, reason: str) -> None:
+    """
+    Send a normalized event into the central detection policy engine.
+    Fail open: alert generation should continue even if policy routing fails.
+    """
+    try:
+        result = handle_event({
+            "device_id": mac,
+            "device_id_type": "mac",
+            "severity": severity,
+            "reason": reason,
+        })
+        logger.info(
+            "Detection policy result for %s: %s",
+            mac,
+            result.get("result", {}).get("status", "unknown"),
+        )
+    except Exception:
+        logger.exception("Failed routing anomaly signal into detection engine for %s", mac)
+        
 def _check_volume_spike(
     flow: dict, baseline: dict, mac: str
 ) -> list[dict]:
@@ -109,43 +151,51 @@ def _check_volume_spike(
             "z_score": round(z, 2),
         })
         enqueue_and_dispatch(event)
+        events.append(event)
 
-        alert = build_alert(
-            device_id=mac,
-            severity=severity,
-            title="Unusual outbound data volume",
-            explanation=(
-                f"The device {mac} ({flow.get('ip_address', 'unknown IP')}) "
-                f"sent {current:,} bytes this interval, which is "
-                f"{z:.1f}x the normal variation above its average of "
-                f"{mean:,.0f} bytes. This could indicate data exfiltration, "
-                f"a backup running at an unusual time, or compromised software "
-                f"sending data to an external server."
-            ),
-            evidence={
-                "source_module": "anomaly",
-                "details": {
-                    "anomaly_type": "volume_spike",
-                    "current_bytes": current,
-                    "baseline_mean": round(mean, 1),
-                    "baseline_stddev": round(stddev, 1),
-                    "z_score": round(z, 2),
-                    "device_ip": flow.get("ip_address"),
+        if _should_alert(severity):
+            _route_to_detection(
+                mac,
+                severity,
+                f"volume_spike z={z:.2f} bytes_out={current}"
+            )
+
+            alert = build_alert(
+                device_id=mac,
+                severity=severity,
+                title="Unusual outbound data volume",
+                explanation=(
+                    f"The device {mac} ({flow.get('ip_address', 'unknown IP')}) "
+                    f"sent {current:,} bytes this interval, which is "
+                    f"{z:.1f}x the normal variation above its average of "
+                    f"{mean:,.0f} bytes. This could indicate data exfiltration, "
+                    f"a backup running at an unusual time, or compromised software "
+                    f"sending data to an external server."
+                ),
+                evidence={
+                    "source_module": "anomaly",
+                    "details": {
+                        "anomaly_type": "volume_spike",
+                        "current_bytes": current,
+                        "baseline_mean": round(mean, 1),
+                        "baseline_stddev": round(stddev, 1),
+                        "z_score": round(z, 2),
+                        "device_ip": flow.get("ip_address"),
+                    },
                 },
-            },
-            recommended_action=(
-                f"Investigate what the device at {flow.get('ip_address', mac)} "
-                f"is sending. Check for unexpected uploads, backups, or "
-                f"unfamiliar processes."
-            ),
-            confidence=min(0.5 + z * 0.1, 0.95),
-            related_event_ids=[event["id"]],
-        )
-        if enforcement:
-            alert["recommended_enforcement"] = enforcement
-        enqueue_and_dispatch(alert)
+                recommended_action=(
+                    f"Investigate what the device at {flow.get('ip_address', mac)} "
+                    f"is sending. Check for unexpected uploads, backups, or "
+                    f"unfamiliar processes."
+                ),
+                confidence=_confidence_from_z(z, severity),
+                related_event_ids=[event["id"]],
+            )
+            if enforcement:
+                alert["recommended_enforcement"] = enforcement
+            enqueue_and_dispatch(alert)
+            events.append(alert)
 
-        events.extend([event, alert])
         logger.info(
             "Volume spike detected for %s: %d bytes (z=%.1f, severity=%s)",
             mac, current, z, severity,
@@ -177,43 +227,51 @@ def _check_connection_spike(
             "z_score": round(z, 2),
         })
         enqueue_and_dispatch(event)
+        events.append(event)
 
-        alert = build_alert(
-            device_id=mac,
-            severity=severity,
-            title="Excessive connection attempts",
-            explanation=(
-                f"The device {mac} ({flow.get('ip_address', 'unknown IP')}) "
-                f"made {current} connections this interval, compared to its "
-                f"normal average of {mean:.0f}. This is {z:.1f}x the normal "
-                f"variation and could indicate port scanning, brute-force "
-                f"attempts, or malware trying to spread to other systems."
-            ),
-            evidence={
-                "source_module": "anomaly",
-                "details": {
-                    "anomaly_type": "connection_spike",
-                    "current_connections": current,
-                    "baseline_mean": round(mean, 1),
-                    "baseline_stddev": round(stddev, 1),
-                    "z_score": round(z, 2),
-                    "device_ip": flow.get("ip_address"),
+        if _should_alert(severity):
+            _route_to_detection(
+                mac,
+                severity,
+                f"connection_spike z={z:.2f} connections={current}"
+            )
+
+            alert = build_alert(
+                device_id=mac,
+                severity=severity,
+                title="Excessive connection attempts",
+                explanation=(
+                    f"The device {mac} ({flow.get('ip_address', 'unknown IP')}) "
+                    f"made {current} connections this interval, compared to its "
+                    f"normal average of {mean:.0f}. This is {z:.1f}x the normal "
+                    f"variation and could indicate port scanning, brute-force "
+                    f"attempts, or malware trying to spread to other systems."
+                ),
+                evidence={
+                    "source_module": "anomaly",
+                    "details": {
+                        "anomaly_type": "connection_spike",
+                        "current_connections": current,
+                        "baseline_mean": round(mean, 1),
+                        "baseline_stddev": round(stddev, 1),
+                        "z_score": round(z, 2),
+                        "device_ip": flow.get("ip_address"),
+                    },
                 },
-            },
-            recommended_action=(
-                f"Check the device at {flow.get('ip_address', mac)} for "
-                f"unfamiliar software or processes making network connections. "
-                f"If this device doesn't normally connect to many servers, "
-                f"it may be compromised."
-            ),
-            confidence=min(0.5 + z * 0.1, 0.95),
-            related_event_ids=[event["id"]],
-        )
-        if enforcement:
-            alert["recommended_enforcement"] = enforcement
-        enqueue_and_dispatch(alert)
+                recommended_action=(
+                    f"Check the device at {flow.get('ip_address', mac)} for "
+                    f"unfamiliar software or processes making network connections. "
+                    f"If this device doesn't normally connect to many servers, "
+                    f"it may be compromised."
+                ),
+                confidence=_confidence_from_z(z, severity),
+                related_event_ids=[event["id"]],
+            )
+            if enforcement:
+                alert["recommended_enforcement"] = enforcement
+            enqueue_and_dispatch(alert)
+            events.append(alert)
 
-        events.extend([event, alert])
         logger.info(
             "Connection spike detected for %s: %d conns (z=%.1f, severity=%s)",
             mac, current, z, severity,
@@ -246,6 +304,13 @@ def _check_unusual_destinations(
         severity = "low"
 
     enforcement = _enforcement_for_severity(severity)
+
+    _route_to_detection(
+        mac,
+        severity,
+        f"unusual_destinations count={count}"
+    )
+
     sample_dests = sorted(new_dests)[:5]  # show up to 5 examples
 
     event = build_anomaly_detected(mac, {
@@ -282,7 +347,7 @@ def _check_unusual_destinations(
             f"If you don't recognize them, consider quarantining the "
             f"device until you can investigate further."
         ),
-        confidence=min(0.6 + count * 0.05, 0.95),
+        confidence=_confidence_from_count(count, severity),
         related_event_ids=[event["id"]],
     )
     if enforcement:
