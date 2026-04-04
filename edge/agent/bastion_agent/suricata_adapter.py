@@ -55,8 +55,10 @@ def parse_eve_log(log_path: str = "/var/log/suricata/eve.json") -> list[dict]:
                 if data.get("event_type") != "alert":
                     continue
 
-                mac = data.get("src_mac")
                 alert = data.get("alert", {})
+
+                # Prefer MAC if present, otherwise fall back to source IP
+                mac = data.get("src_mac") or data.get("src_ip")
 
                 if not mac:
                     continue
