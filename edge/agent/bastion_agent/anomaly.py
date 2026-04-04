@@ -188,7 +188,7 @@ def _check_volume_spike(
                     f"is sending. Check for unexpected uploads, backups, or "
                     f"unfamiliar processes."
                 ),
-                confidence=min(0.5 + z * 0.1, 0.95),
+                confidence=_confidence_from_z(z, severity),
                 related_event_ids=[event["id"]],
             )
             if enforcement:
@@ -264,7 +264,7 @@ def _check_connection_spike(
                     f"If this device doesn't normally connect to many servers, "
                     f"it may be compromised."
                 ),
-                confidence=min(0.5 + z * 0.1, 0.95),
+                confidence=_confidence_from_z(z, severity),
                 related_event_ids=[event["id"]],
             )
             if enforcement:
@@ -347,7 +347,7 @@ def _check_unusual_destinations(
             f"If you don't recognize them, consider quarantining the "
             f"device until you can investigate further."
         ),
-        confidence=min(0.6 + count * 0.05, 0.95),
+        confidence=_confidence_from_count(count, severity),
         related_event_ids=[event["id"]],
     )
     if enforcement:
