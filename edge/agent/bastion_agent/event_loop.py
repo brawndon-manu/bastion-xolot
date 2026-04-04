@@ -35,16 +35,16 @@ BOLD = "\033[1m"
 # Dashboard counters
 event_count = 0
 status_counts = defaultdict(int)
-mac_counter = defaultdict(int)
+device_counter = defaultdict(int)
 
 
 def generate_event() -> Dict[str, Any]:
     return {
-        "mac": random.choice(TEST_MACS),
+        "device_id": random.choice(TEST_MACS),
+        "device_id_type": "mac",
         "severity": random.choice(SEVERITIES),
         "reason": "simulated continuous activity"
     }
-
 
 def read_current_state(mac: str) -> str | None:
     try:
@@ -54,14 +54,12 @@ def read_current_state(mac: str) -> str | None:
     except Exception:
         return None
 
-
 def get_color(severity: str) -> str:
     if severity == "HIGH":
         return RED
     elif severity == "MEDIUM":
         return YELLOW
     return GREEN
-
 
 def get_action_label(to_state: str | None, status: str) -> str:
     if status == "NOOP":
@@ -74,19 +72,20 @@ def get_action_label(to_state: str | None, status: str) -> str:
 
     return f"{GREEN}NO ACTION{RESET}"
 
-
 # Prevent downgrade (HARD to SOFT)
 def apply_severity_policy(event: Dict[str, Any]) -> Dict[str, Any]:
-    mac = event.get("mac")
+    device_id = event.get("device_id")
+    device_id_type = event.get("device_id_type")
     severity = event.get("severity")
 
-    current = read_current_state(mac)
+    if device_id_type == "mac":
+        current = read_current_state(device_id)
 
-    if current == "HARD" and severity == "medium":
-        return {
-            "result": {"status": "NOOP"},
-            "transition": {"from": "HARD", "to": "HARD"}
-        }
+        if current == "HARD" and severity == "medium":
+            return {
+                "result": {"status": "NOOP"},
+                "transition": {"from": "HARD", "to": "HARD"}
+            }
 
     return handle_event(event)
 
@@ -104,9 +103,9 @@ def resolve_mac(ip: str) -> str | None:
 
     return None
 
-
 def pretty_print(event: Dict[str, Any], result: Dict[str, Any]) -> None:
-    mac = event.get("mac")
+    device_id = event.get("device_id")
+    device_id_type = event.get("device_id_type", "unknown")
     severity = event.get("severity", "").upper()
     reason = event.get("reason")
 
@@ -124,7 +123,8 @@ def pretty_print(event: Dict[str, Any], result: Dict[str, Any]) -> None:
     print(f"{BOLD}{CYAN}[{timestamp}]{RESET}")
 
     print(f"\n{BOLD}[EVENT]{RESET}")
-    print(f"MAC: {mac}")
+    print(f"Device ID: {device_id}")
+    print(f"Identity Type: {device_id_type}")
     print(f"Severity: {color}{severity}{RESET}")
     print(f"Reason: {reason}")
 
@@ -162,9 +162,9 @@ def print_dashboard():
     print(f"SOFT Devices: {soft}")
 
     # Top offender
-    if mac_counter:
-        top_mac = max(mac_counter, key=mac_counter.get)
-        print(f"Top Offender: {top_mac} ({mac_counter[top_mac]} events)")
+    if device_counter:
+        top_device = max(device_counter, key=device_counter.get)
+        print(f"Top Offender: {top_device} ({device_counter[top_device]} events)")
 
     print("#" * 60 + "\n")
 
@@ -196,15 +196,24 @@ def stream_eve_log(log_path: str):
                     severity = "medium"
                 else:
                     severity = "low"
-                
+
                 src_ip = data.get("src_ip")
-                mac = resolve_mac(src_ip) or "unknown"
-                yield {
-                    "mac": mac,
-                    "ip": src_ip,
-                    "severity": severity,
-                    "reason": alert.get("signature", "unknown alert")
-                }
+                src_mac = data.get("src_mac")
+
+                if src_mac:
+                    yield {
+                        "device_id": src_mac,
+                        "device_id_type": "mac",
+                        "severity": severity,
+                        "reason": alert.get("signature", "unknown alert")
+                    }
+                elif src_ip:
+                    yield {
+                        "device_id": src_ip,
+                        "device_id_type": "ip",
+                        "severity": severity,
+                        "reason": alert.get("signature", "unknown alert")
+                    }
 
             except Exception:
                 continue
@@ -217,17 +226,18 @@ def main():
     seen_events = set()
 
     for event in stream_eve_log("/var/log/suricata/eve.json"):
-        event_id = (event["mac"], event["reason"])
-    
+        event_id = (event["device_id"], event["reason"])
+
         if event_id in seen_events:
             continue
 
         seen_events.add(event_id)
 
-        mac = event["mac"]
-        ip = event.get("ip")
+        device_id = event["device_id"]
+        device_id_type = event["device_id_type"]
 
-        update_device(mac, ip, event["severity"])
+        if device_id_type == "mac":
+            update_device(device_id, None, event["severity"])
 
         result = apply_severity_policy(event)
 
@@ -236,7 +246,7 @@ def main():
         # Update counters
         event_count += 1
         status_counts[status] += 1
-        mac_counter[mac] += 1
+        device_counter[device_id] += 1
 
         pretty_print(event, result)
 
@@ -247,4 +257,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
