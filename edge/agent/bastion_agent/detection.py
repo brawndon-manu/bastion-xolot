@@ -19,17 +19,18 @@ def handle_event(event: Dict[str, Any]) -> dict:
     - Modify system state directly
     """
 
-    mac = event.get("mac")
+    device_id = event.get("device_id")
+    device_id_type = event.get("device_id_type", "mac").lower()
     severity = event.get("severity", "low").lower()
     reason = event.get("reason", "unknown")
 
-    if not mac:
-        raise ValueError("event missing mac")
+    if not device_id:
+        raise ValueError("event missing device_id")
 
-    mac = mac.lower()
+    device_id = str(device_id).lower()
 
     # protected device check
-    if mac in {m.lower() for m in PROTECTED_MACS}:
+    if device_id_type == "mac" and device_id in {m.lower() for m in PROTECTED_MACS}:
         return {
             "result": {
                 "status": "IGNORED",
@@ -37,10 +38,19 @@ def handle_event(event: Dict[str, Any]) -> dict:
             }
         }
 
+    # Only MAC-identified devices are eligible for enforcement
+    if device_id_type != "mac":
+        return {
+            "result": {
+                "status": "IGNORED",
+                "reason": f"unresolved device identity ({device_id_type})"
+            }
+        }
+
     # POLICY ENGINE (Phase 5 R2)
     if severity == "high":
         return enforcement.request_quarantine_hard(
-            mac=mac,
+            mac=device_id,
             reason=reason,
             actor="detection"
         )
