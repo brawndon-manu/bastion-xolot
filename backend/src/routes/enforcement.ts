@@ -5,100 +5,137 @@ import {
     listEnforcementActions
  } from "../services/enforcement_service";
 
- /**
-  * Router responsible for enforcement-related actions
-  * 
-  * Handles:
-  *  - Quarantining devices
-  *  - Releasing devices from quarantine
-  *  - Viewing enforcement history
-  */
+ // Create a new Express router for enforcement-related endpoints
 export const enforcementRouter = Router();
 
 /**
- * Shared handler for quarantining a device
- * 
- * Extracted to support:
- *  - Multiple route aliases (e.g., typo tolerance)
- *  - Cleaner route definitions
- * 
- * Responsibilities:
- *  - Validate request data
- *  - Call enforcement service
- *  - Return structured response
+ * Represenets the normalized structure of an enforcement request.
  */
-async function handleQuarantine(req: any, res: any) {
-    try {
-        const action = quarantineDevice(
-            req.params.id,                                                              // Target device ID
-            req.body.reason || "policy_violation",                                      // Reason for enforcement
-            {
-                initiated_by: req.body.initiated_by || "operator",                      // Who triggered action
-                evidence: req.body.evidence ? JSON.stringify(req.body.evidence) : null, // Optional supporting evidence
-            }
-        );
+type EnforcementRequest = {
+    reason: string;             // Reason for enforcement (e.g., policy_violation)
+    initiated_by: string;       // Who initiated the action (default: operator)
+    evidence: string | null;    // Optional supporting evidence (stored as JSON string)
+};
 
-        // Return created enforcement record
-        res.status(201).json(action);
-
-    } catch (err) {
-        console.error("Quarantine failed:", err);
-        res.status(500).json({ error: err instanceof Error ? err.message : "Internal server error" });
-    }
+/**
+ * Type gaurd to ensure a value is a plain object (not null or an array).
+ */
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**
- * Quarantine endpoints
- * 
- * Primary route:
- *  POST /enforcement/quarantine/:id
- * 
- * Secondary route (typo-safe alias):
- *  POST /enforcement/quarantine/:id
- * 
- * The alias ensures the API is forgiving during testing/demo.
+ * Safely reads a string value.
+ *  - Returns trimmed string if valid
+ *  - Returns undefined if not a valid non-empty string
  */
+function readOptionalString(value: unknown): string | undefined {
+    return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+/**
+ * Normalizes incoming request body into a consistent EnforcementRequest format.
+ *  - Applies defaults if fields are missing
+ *  - Validate that body is an object
+ *  - Converts evidence into a JSON string if provided
+ */
+function normalizeEnforcementRequest(body: unknown, defaultReason: string): EnforcementRequest {
+    // If no body provided, return default enforcement request
+    if (body === undefined || body === null) {
+        return {
+            reason: defaultReason,
+            initiated_by: "operator",
+            evidence: null,
+        };
+    }
+
+    // Ensure request body is a valid object
+    if (!isRecord(body)) {
+        throw new Error("Request body must be a JSON object");
+    }
+
+    // Convert evidence to JSON string if present, otherwise null
+    const evidence = body.evidence === undefined ? null : JSON.stringify(body.evidence);
+
+    return {
+        // Use provided reason or fallback default
+        reason: readOptionalString(body.reason) || defaultReason,
+
+        // Use provided initiator or default to "operator"
+        initiated_by: readOptionalString(body.initiated_by) || "operator",
+        evidence,
+    };
+}
+
+/**
+ * Centralized error handler for enforcement routes.
+ *  - Logs the error
+ *  - Returns appropriate HTTP status codes based on error type
+ */
+function sendEnforcementError(res: any, err: unknown, fallbackMessage: string) {
+    console.error(fallbackMessage, err);
+
+    if (err instanceof Error) {
+        // Resource not found -> 404
+        if (err.message.includes("not found")) {
+            return res.status(404).json({ error: err.message });
+        }
+
+        // Invalid request format -> 400
+        if (err.message.includes("Request body must")) {
+            return res.status(400).json({ error: err.message });
+        }
+    }
+
+    // Default -> Internal Server Error
+    return res.status(500).json({ error: "Internal server error" });
+}
+
+/**
+ * Handles device quarantine requests.
+ *  - Normalizes input
+ *  - Calls service layer to perform action
+ *  - Returns created enforcement action
+ */
+async function handleQuarantine(req: any, res: any) {
+    try {
+        const request = normalizeEnforcementRequest(req.body, "policy_violation");
+        const action = quarantineDevice(req.params.id, request.reason, {
+            initiated_by: request.initiated_by,
+            evidence: request.evidence,
+        });
+
+        res.status(201).json(action);
+    } catch (err) {
+        sendEnforcementError(res, err, "Quarantine failed:");
+    }
+}
+
+// Route a quarantine a device by ID
 enforcementRouter.post("/quarantine/:id", handleQuarantine);
+
+// NOTE: Duplicate route with typo ("quarantine")
+// Likely added for backward compatibility or mistake
 enforcementRouter.post("/quaratine/:id", handleQuarantine);
 
 /**
- * Release device from quarantine
- * 
- * Endpoint:
- *  POST /enforcement/release/:id
- * 
- * Behavior:
- *  - Updates device status back to "normal"
- *  - Logs enforcement action (unquarantine)
- *  - Optionally records operator + evidence
+ * Handles releasing (unquarantining) a device
  */
 enforcementRouter.post("/release/:id", async (req, res) => {
     try {
+        const request = normalizeEnforcementRequest(req.body, "manual_release");
         const action = unquarantineDevice(req.params.id, {
-            initiated_by: req.body.initiated_by || "operator",
-            evidence: req.body.evidence ? JSON.stringify(req.body.evidence) : null,
+            initiated_by: request.initiated_by,
+            evidence: request.evidence,
         });
         res.status(200).json(action);
     } catch (err) {
-        console.error("Release failed:", err);
-        res.status(500).json({ error: err instanceof Error ? err.message : "Internal server error" });
+        sendEnforcementError(res, err, "Release failed:");
     }
 });
 
 /**
- * Retrieve enforcement history
- * 
- * Endpoint:
- *  GET /enforcement/history
- * 
- * Returns:
- *  - List of all enforcement actions (quarantine/unquarantine)
- *  - Ordered by most recent first (handled in service)
- * 
- * Used for:
- *  - Auditing
- *  - Debugging
- *  - UI display
+ * Retrieves enforcement history.
  */
 enforcementRouter.get("/history", (req, res) => {
     try {
