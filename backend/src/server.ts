@@ -13,9 +13,9 @@ import { devicesRouter } from "./routes/devices";
 import { enforcementRouter } from "./routes/enforcement";
 
 /**
- * ==============================
+ * ===============================
  * DATABASE INITIALIZATION
- * ==============================
+ * ===============================
  * 
  * Initialize database BEFORE starting server.
  * Ensures:
@@ -26,13 +26,13 @@ import { enforcementRouter } from "./routes/enforcement";
  * This guarantees the backend is fully operational at startup.
  */
 initDatabase();
-
 /**
  * ==============================
  * EXPRESS APPLICATION SETUP
  * ==============================
  */
 const app = express();
+app.disable("x-powered-by");
 
 /**
  * Enable JSON request parsing
@@ -42,7 +42,7 @@ const app = express();
  *  - POST /enforcement
  *  - Any API receiving JSON payloads
  */
-app.use(express.json());
+app.use(express.json({ limit: "256kb" }));
 
 /**
  * ==============================
@@ -62,23 +62,6 @@ app.use("/alerts", alertsRouter);
 
 /**
  * ==============================
- * GLOBAL ERROR HANDLER
- * ==============================
- * 
- * Catches unhandled errors from any route.
- * Prevents:
- *  - Server crashes
- *  - Leaking internal error details
- * 
- * NOTE: This should be the LAST middleware
- */
-app.use((err: any, req: any, res: any, next: any) => {
-    console.error("Unhandle server error:", err);
-    res.status(500).json({ error: "Internal server error" });
-}); 
-
-/**
- * ==============================
  * HEALTH CHECK ENDPOINT
  * ==============================
  * 
@@ -89,40 +72,57 @@ app.use((err: any, req: any, res: any, next: any) => {
  *  - Monitoring system status
  *  - Debugging
  *  - Deployment verification
- * 
- * Returns:
- *  - API status
- *  - Database connectivity
- *  - WebSocket status
- *  - Configuration flags
  */
 app.get("/health", (req, res) => {
+
+    // Get database instance/connection
     const db = getDb();
 
-    // Simple DB check query
+    // Perform a simple query to verify database connectivity
+    // "SELECT 1" is a lightweight way to check if DB is responsive
     const dbCheck = db.prepare("SELECT 1 as ok").get() as { ok: number };
+
+    // Return overall system health information
     res.json({
-        status: "ok",
-        service: "bastion-backend",
-        environment: config.NODE_ENV,
-
-        /**
-         * Security configuration flags
-         */
-        monitor_only: config.MONITOR_ONLY,
-        auto_quarantine_threshold: config.AUTO_QUARANTINE_THRESHOLD,
-
-        /**
-         * System health indicators
-         */
-        database: dbCheck.ok === 1 ? "ok" : "degraded",
-        realtime: getRealtimeStatus(),
-
-        /**
-         * Timestamp for debugging / monitoring
-         */
-        time: new Date().toISOString(),
+        status: "ok",                                                   // Indicates the service is running
+        service: "bastion-backend",                                     // Name of the service (useful for monitoring tools)
+        environment: config.NODE_ENV,                                   // Current environment (development, production, etc.)
+        monitor_only: config.MONITOR_ONLY,                              // Whether the system is in passive monitoring mode (no enforcement actions)
+        auto_quarantine_threshold: config.AUTO_QUARANTINE_THRESHOLD,    // Threshold value used to trigger automatic quarantine actions
+        database: dbCheck.ok === 1 ? "ok" : "degraded",                 // Reports database health based on query result
+        realtime: getRealtimeStatus(),                                  // Status of real-time system (e.g., WebSocket connections)
+        time: new Date().toISOString(),                                 // Current server time (useful for debugging and monitoring)
     });
+});
+
+/**
+ * ==============================
+ * GLOBAL ERROR HANDLER
+ * ==============================
+ * 
+ * Catches unhandled errors from any route.
+ * Prevents:
+ *  - Server crashes
+ *  - Leaking internal error details
+ * 
+ * NOTE: This should be the LAST middleware
+ */
+app.use((req, res) => {
+    res.status(404).json({ error: `Route not found: ${req.method} ${req.originalUrl}` });
+});
+
+app.use((err: any, req: any, res: any, next: any) => {
+    console.error("Unhandled server error:", err);
+
+    if (err?.type === "entity.too.large") {
+        return res.status(413).json({ error: "Request body exceeds size limit" });
+    }
+
+    if (err instanceof SyntaxError && "body" in err) {
+        return res.status(400).json({ error: "Malformed JSON request body" });
+    }
+
+    res.status(500).json({ error: "Internal server error" });
 });
 
 /**
