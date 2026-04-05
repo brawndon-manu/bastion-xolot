@@ -16,7 +16,7 @@ export let db: Database.Database;
  * Initializes the SQLite database
  * 
  * Responsibilites:
- *  - Ensure database directory exists
+ *  - Ensure datbase directory exists
  *  - Open/create database file
  *  - Apply performance and integrity settings
  *  - Load base schema
@@ -26,7 +26,7 @@ export let db: Database.Database;
  */
 export function initDatabase() {
     const dbPath = config.DB_PATH;
-    
+
     // Ensure directory exists (important for first-time startup)
     const dir = path.dirname(dbPath);
     if (!fs.existsSync(dir)) {
@@ -62,13 +62,69 @@ export function initDatabase() {
 }
 
 /**
+ * Resolves the absolute path to schema.sql
+ * 
+ * Why this exists:
+ * The location of schema.sql differs depending on how the backend is run:
+ * 
+ *  - Development (ts-node):
+ *      schema is typically in src/db/schema.sql
+ * 
+ *  - Production build (compiled JS in /dist):
+ *      schema may be copied to dist/db/schema.sql
+ * 
+ *  - Runtime (__dirname-based resolution):
+ *      schema may exist relative to compiled file location
+ * 
+ * This function checks multiple possible locations and returns
+ * the first valid path that exists on disk.
+ * 
+ * This ensures the backend works reliably across:
+ *  - local development
+ *  - compiled builds
+ *  - deployment environments (e.g., Raspberry Pi)
+ */
+function resolveSchemaPath(): string {
+    /**
+     * Candidate paths to check (in priority order)
+     */
+    const candidates = [
+        // Same directory as compiled file (most reliable in production)
+        path.join(__dirname, "schema.sql"),
+
+        // Compiled project structure (dist folder)
+        path.join(process.cwd(), "dist/db/schema.sql"),
+
+        // Source project structure (development mode)
+        path.join(process.cwd(), "src/db/schema.sql"),
+    ];
+
+    /**
+     * Iterate through candidates and return the first valid file
+     */
+    for (const candidate of candidates) {
+        if (fs.existsSync(candidate)) {
+            return candidate;
+        }
+    }
+
+    /**
+     * If no valid path is found, throw a descriptive error
+     * 
+     * This helps debugging deployment issues quickly by showing
+     * exactly which paths were checked.
+     */
+    throw new Error(`Unable to locate schema.sql. Checked: ${candidates.join(", ")}`);
+}
+
+/**
  * Loads the base schema from schema.sql
  * 
  * This creates tables if they do not exist.
  * Safe to run multiple times due to IF NOT EXISTS usage.
  */
 function initializeSchema() {
-    const schemaPath = path.join(__dirname, "schema.sql");
+    const schemaPath = resolveSchemaPath();
 
     // Read schema file from disk
     const schema = fs.readFileSync(schemaPath, "utf-8");
@@ -84,10 +140,10 @@ function initializeSchema() {
  * 
  * Behavior:
  *  - Runs ALTER TABLE statements
- *  - Ignores "duplicate column" erros (already applied)
+ *  - Ignores "duplicate column" errors (already applied)
  *  - Throws for any other unexpected error
  * 
- * This allows safe repeated startups without breaking the DB
+ * This allows safe repeated startups without breaking the DB.
  */
 function applyMigrations() {
     const migrations = [
@@ -124,13 +180,13 @@ export function getDb() {
 }
 
 /**
- * Executes a write operation (INSERT, UPDATE, DELETE) 
+ * Executes a write operation (INSERT, UPDATE, DELETE)
  * 
  * Example usage:
  * run("INSERT INTO devices VALUES (?, ?)", [id, mac])
  * 
  * Centralizing DB access allows:
- *  - Future logging of queries
+ *  - future logging of queries
  *  - performance monitoring
  *  - easier refactoring if DB changes
  */
@@ -154,7 +210,7 @@ export function get(query: string, params: any[] = []) {
 }
 
 /**
- * Excutes a query returning multiple rows
+ * Executes a query returning multiple rows
  * 
  * Used for:
  *  - listing devices
@@ -168,17 +224,17 @@ export function all(query: string, params: any[] = []) {
 /**
  * Executes multiple operations atomically
  * 
- * If any operation fails -> ALL changes are rolled back
+ * If any operation fails → ALL changes are rolled back
  * 
  * Critical for:
- *  - Keeping security state consistent
+ *  - keeping security state consistent
  *  - preventing partial writes (e.g., alert created but device not updated)
  * 
  * Example:
  * transaction(() => {
- *  run("INSERT INTO events ...")
- *  run("UPDATE devices ...")
- *  run("INSERT INTO alerts ...")
+ *   run("INSERT INTO events ...")
+ *   run("UPDATE devices ...")
+ *   run("INSERT INTO alerts ...")
  * })
  */
 export function transaction<T>(fn: () => T): T {
