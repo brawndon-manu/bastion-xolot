@@ -22,13 +22,14 @@ import { config } from "../config";
  *  - Frontend updates
  */
 type CorrelationResult = {
-    event: StoredEvent;         // Persisted event record
-    alert?: AlertRecord;        // Most recent alert (for convenience)
-    alerts: AlertRecord[];      // All alerts generated during processing
-    anomaly?: StoredAnomaly;    // Behavioral anomaly (if detected)
-    enforcement?: unknown;      // Enforcement action (quarantine, etc.)
-    risk_score?: number;        // Updated device risk score
-    device?: unknown;           // Updated device state
+    event: StoredEvent;             // Persisted event record
+    duplicate?: boolean;            // Boolean for duplicate
+    alert?: AlertRecord;            // Most recent alert (for convenience)
+    alerts: AlertRecord[];          // All alerts generated during processing
+    anomaly?: StoredAnomaly;        // Behavioral anomaly (if detected)
+    enforcement?: unknown;          // Enforcement action (quarantine, etc.)
+    risk_score?: number;            // Updated device risk score
+    device?: unknown;               // Updated device state
 };
 
 /**
@@ -88,7 +89,6 @@ function createCorrelatedThreatAlert(
  *  - Broadcasts results in real-time
  */
 export async function processEvent(event: Record<string, unknown>, deviceId: string): Promise<CorrelationResult> {
-    
     /**
      * Persist event and run anomaly detection
      * 
@@ -98,6 +98,14 @@ export async function processEvent(event: Record<string, unknown>, deviceId: str
      *  - Returns structured result
      */
     const ingestion = ingestEvent(event, deviceId);
+
+    if (ingestion.duplicate) {
+        return {
+            event: ingestion.event,
+            duplicate: true,
+            alerts: [],
+        };
+    }
 
     let riskDelta = 0;                      // Risk score increment
     const alerts: AlertRecord[] = [];       // Alerts generated during processing
@@ -110,7 +118,6 @@ export async function processEvent(event: Record<string, unknown>, deviceId: str
      */
     if (event.type === "dns_block") {
         riskDelta = 10;
-
         alerts.push(createAlert({
             device_id: deviceId,
             type: String(event.type),
@@ -129,7 +136,6 @@ export async function processEvent(event: Record<string, unknown>, deviceId: str
      */
     if (event.type === "suspicious_connection") {
         riskDelta = 20;
-
         alerts.push(createAlert({
             device_id: deviceId,
             type: String(event.type),
@@ -148,7 +154,6 @@ export async function processEvent(event: Record<string, unknown>, deviceId: str
      */
     if (event.type === "ids_alert") {
         riskDelta = 25;
-
         alerts.push(createAlert({
             device_id: deviceId,
             type: String(event.type),
@@ -166,7 +171,6 @@ export async function processEvent(event: Record<string, unknown>, deviceId: str
      * ==============================
      */
     if (ingestion.anomaly) {
-        // Higher anomaly score -> higher risk
         riskDelta += ingestion.anomaly.score >= 40 ? 25 : 15;
         alerts.push(createBehavioralAlert(deviceId, ingestion.anomaly));
     }
@@ -192,10 +196,7 @@ export async function processEvent(event: Record<string, unknown>, deviceId: str
      * FETCH CONTEXT (for correlation)
      * ==============================
      */
-    const recentAnomalies = getRecentAnomalies(
-        deviceId,
-        Date.now() - (60 * 60 * 1000)
-    );
+    const recentAnomalies = getRecentAnomalies(deviceId, Date.now() - (60 * 60 * 1000));
     const recentIdsSignals = getRecentEventsByTypes(
         deviceId,
         ["ids_alert", "suspicious_connection"],
@@ -253,14 +254,6 @@ export async function processEvent(event: Record<string, unknown>, deviceId: str
         broadcast("alert.created", alert);
     }
 
-    if (enforcement && typeof enforcement === "object" && enforcement !== null && "status" in enforcement) {
-        const status = (enforcement as { status: string }).status;
-        broadcast(
-            status === "simulated" ? "device.monitor_only" : "device.quarantined",
-            enforcement
-        );
-    }
-
     /**
      * ==============================
      * RETURN RESULT
@@ -268,7 +261,7 @@ export async function processEvent(event: Record<string, unknown>, deviceId: str
      */
     return {
         event: ingestion.event,
-        alert: alerts[alerts.length - 1],   // most recent alert
+        alert: alerts[alerts.length - 1],
         alerts,
         anomaly: ingestion.anomaly,
         enforcement,
