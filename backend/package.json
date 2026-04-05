@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "ts-node-dev src/server.ts",
     "build": "tsc",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "test:backend": "npm run build && node scripts/test-backend.js"
   },
   "dependencies": {
     "better-sqlite3": "^12.6.2",
