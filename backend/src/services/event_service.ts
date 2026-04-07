@@ -58,6 +58,8 @@ export type StoredAnomaly = {
     evidence: string;
     status: string;
     created_at: number;
+    updated_at: number;
+    resolved_at: number | null;
 };
 
 /**
@@ -318,6 +320,7 @@ function detectAnomaly(
     }
 
     const severity = score >= 40 ? "high" : "medium";
+    const now = Date.now();
 
     return {
         id: randomUUID(),
@@ -332,7 +335,9 @@ function detectAnomaly(
             previousBaseline,
         }),
         status: "open",
-        created_at: Date.now(),
+        created_at: now,
+        updated_at: now,
+        resolved_at: null,
     };
 }
 
@@ -341,9 +346,9 @@ function insertAnomaly(anomaly: StoredAnomaly): void {
     db.prepare(`
         INSERT INTO anomalies (
             id, device_id, source_event_id, type, severity,
-            score, summary, evidence, status, created_at
+            score, summary, evidence, status, created_at, updated_at, resolved_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
         anomaly.id,
         anomaly.device_id,
@@ -354,7 +359,9 @@ function insertAnomaly(anomaly: StoredAnomaly): void {
         anomaly.summary,
         anomaly.evidence,
         anomaly.status,
-        anomaly.created_at
+        anomaly.created_at,
+        anomaly.updated_at,
+        anomaly.resolved_at
     );
 }
 
@@ -395,9 +402,52 @@ export function getRecentAnomalies(deviceId: string, since: number): StoredAnoma
     const db = getDb();
     return db.prepare(`
         SELECT * FROM anomalies
-        WHERE device_id = ? AND created_at >= ?
+        WHERE device_id = ?
+          AND status = 'open'
+          AND created_at >= ?
         ORDER BY created_at DESC
     `).all(deviceId, since) as StoredAnomaly[];
+}
+
+/**
+ * Marks stale anomalies as resolved after a quiet period.
+ * 
+ * This gives the backend a basic lifecycle instead of leaving anomalies open forever.
+ */
+export function resolveStaleAnomalies(deviceId: string, olderThan: number): StoredAnomaly[] {
+    const db = getDb();
+    const now = Date.now();
+
+    const anomalies = db.prepare(`
+        SELECT * FROM anomalies
+        WHERE device_id = ?
+          AND status = 'open'
+          AND updated_at <= ?
+        ORDER BY updated_at DESC
+    `).all(deviceId, olderThan) as StoredAnomaly[];
+
+    if (anomalies.length === 0) {
+        return [];
+    }
+
+    const update = db.prepare(`
+        UPDATE anomalies
+        SET status = 'resolved',
+            updated_at = ?,
+            resolved_at = ?
+        WHERE id = ?
+    `);
+
+    for (const anomaly of anomalies) {
+        update.run(now, now, anomaly.id);
+    }
+
+    return anomalies.map((anomaly) => ({
+        ...anomaly,
+        status: "resolved",
+        updated_at: now,
+        resolved_at: now,
+    }));
 }
 
 /**
