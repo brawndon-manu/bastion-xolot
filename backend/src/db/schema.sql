@@ -56,6 +56,8 @@ CREATE TABLE IF NOT EXISTS anomalies (
     evidence TEXT,
     status TEXT DEFAULT 'open',
     created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    resolved_at INTEGER,
     FOREIGN KEY(device_id) REFERENCES devices(id),
     FOREIGN KEY(source_event_id) REFERENCES events(id)
 );
@@ -68,9 +70,12 @@ CREATE TABLE IF NOT EXISTS alerts (
     title TEXT,
     explanation TEXT,
     evidence TEXT,
+    fingerprint TEXT,
     confidence REAL,
     status TEXT DEFAULT 'active',
     created_at INTEGER,
+    updated_at INTEGER,
+    resolved_at INTEGER,
     FOREIGN KEY(device_id) REFERENCES devices(id)
 );
 
@@ -90,9 +95,12 @@ CREATE TABLE IF NOT EXISTS enforcement_actions (
 CREATE INDEX IF NOT EXISTS idx_devices_last_seen ON devices(last_seen);
 CREATE INDEX IF NOT EXISTS idx_alerts_created_at ON alerts(created_at);
 CREATE INDEX IF NOT EXISTS idx_alerts_device_id ON alerts(device_id);
+CREATE INDEX IF NOT EXISTS idx_alerts_fingerprint ON alerts(fingerprint);
+CREATE INDEX IF NOT EXISTS idx_alerts_status ON alerts(status);
 CREATE INDEX IF NOT EXISTS idx_events_device_id ON events(device_id);
 CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp);
 CREATE INDEX IF NOT EXISTS idx_metadata_device_id ON metadata_summaries(device_id);
 CREATE INDEX IF NOT EXISTS idx_metadata_created_at ON metadata_summaries(created_at);
 CREATE INDEX IF NOT EXISTS idx_anomalies_device_id ON anomalies(device_id);
 CREATE INDEX IF NOT EXISTS idx_anomalies_created_at ON anomalies(created_at);
+CREATE INDEX IF NOT EXISTS idx_anomalies_status ON anomalies(status);

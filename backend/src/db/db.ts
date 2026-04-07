@@ -150,6 +150,11 @@ function applyMigrations() {
         "ALTER TABLE enforcement_actions ADD COLUMN mode TEXT DEFAULT 'active'",
         "ALTER TABLE enforcement_actions ADD COLUMN status TEXT DEFAULT 'applied'",
         "ALTER TABLE enforcement_actions ADD COLUMN evidence TEXT",
+        "ALTER TABLE alerts ADD COLUMN fingerprint TEXT",
+        "ALTER TABLE alerts ADD COLUMN updated_at INTEGER",
+        "ALTER TABLE alerts ADD COLUMN resolved_at INTEGER",
+        "ALTER TABLE anomalies ADD COLUMN updated_at INTEGER",
+        "ALTER TABLE anomalies ADD COLUMN resolved_at INTEGER",
     ];
 
     for (const migration of migrations) {
@@ -164,6 +169,19 @@ function applyMigrations() {
             }
         }
     }
+
+    // Backfill timestamps for older rows created before lifecycle columns existed.
+    db.exec(`
+        UPDATE alerts
+        SET updated_at = COALESCE(updated_at, created_at),
+            resolved_at = CASE WHEN status = 'resolved' THEN COALESCE(resolved_at, updated_at, created_at) ELSE resolved_at END
+    `);
+
+    db.exec(`
+        UPDATE anomalies
+        SET updated_at = COALESCE(updated_at, created_at),
+            resolved_at = CASE WHEN status = 'resolved' THEN COALESCE(resolved_at, updated_at, created_at) ELSE resolved_at END
+    `);
 }
 
 /**
@@ -224,7 +242,7 @@ export function all(query: string, params: any[] = []) {
 /**
  * Executes multiple operations atomically
  * 
- * If any operation fails → ALL changes are rolled back
+ * If any operation fails -> ALL changes are rolled back
  * 
  * Critical for:
  *  - keeping security state consistent
