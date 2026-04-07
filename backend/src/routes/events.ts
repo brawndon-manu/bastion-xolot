@@ -8,12 +8,13 @@ export const eventsRouter = Router();
 
 /**
  * Represents a normalized event structure after validation and cleanup.
- * Extends a generic object but enforces required fields
+ * Extends a generic object but enforces required fields.
  */
 type NormalizedEvent = Record<string, unknown> & {
     id?: string;                    // Optional event ID
     type: string;                   // Required event type (e.g., login, ids_alert)
     device_id: string;              // Unique identifier for the device
+    device_id_type?: string;        // Optional hint from edge adapters (e.g., mac, ip)
     mac_address?: string;           // Optional MAC address
     ip?: string;                    // Optional IP (alias)
     ip_address?: string;            // Optional IP address (canonical)
@@ -23,14 +24,14 @@ type NormalizedEvent = Record<string, unknown> & {
 };
 
 /**
- * Type guard to ensure a value is a plain object
+ * Type guard to ensure a value is a plain object.
  */
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**
- * SAfely extracts a trimmed string.
+ * Safely extracts a trimmed string.
  * Returns undefined if the value is not a valid non-empty string.
  */
 function readOptionalString(value: unknown): string | undefined {
@@ -38,10 +39,32 @@ function readOptionalString(value: unknown): string | undefined {
 }
 
 /**
+ * Detects the legacy Suricata adapter payload shape from main.
+ * That adapter currently emits reason + severity + device_id_type, but no explicit type.
+ */
+function inferEventType(payload: Record<string, unknown>): string | undefined {
+    const explicitType = readOptionalString(payload.type);
+    if (explicitType) {
+        return explicitType;
+    }
+
+    const deviceIdType = readOptionalString(payload.device_id_type);
+    const reason = readOptionalString(payload.reason);
+    const severity = readOptionalString(payload.severity);
+
+    if (reason && (deviceIdType === "mac" || deviceIdType === "ip" || severity)) {
+        return "ids_alert";
+    }
+
+    return undefined;
+}
+
+/**
  * Validates and normalizes incoming event payload.
  *  - Ensures required fields exist
  *  - Standardizes field names (e.g., ip vs ip_address)
  *  - Applies fallback logic for device identification
+ *  - Accepts the current Suricata adapter stub output from main
  *  - Enforces additional rules for specific event types
  */
 function normalizeEventPayload(payload: unknown): { event?: NormalizedEvent; error?: string } {
@@ -50,36 +73,49 @@ function normalizeEventPayload(payload: unknown): { event?: NormalizedEvent; err
         return { error: "Event payload must be a JSON object" };
     }
 
-    // Validate required event type
-    const type = readOptionalString(payload.type);
+    // Validate required event type, or infer it for legacy adapter payloads.
+    const type = inferEventType(payload);
     if (!type) {
         return { error: "Event type is required" };
     }
 
-    // Extract possible device identifiers
-    const macAddress = readOptionalString(payload.mac_address);
-    const ipAddress = readOptionalString(payload.ip_address) || readOptionalString(payload.ip);
-    const hostname = readOptionalString(payload.hostname);
+    // Extract possible device identifiers.
+    const deviceIdType = readOptionalString(payload.device_id_type);
     const explicitDeviceId = readOptionalString(payload.device_id);
+    let macAddress = readOptionalString(payload.mac_address);
+    let ipAddress = readOptionalString(payload.ip_address) || readOptionalString(payload.ip);
+    const hostname = readOptionalString(payload.hostname);
 
-    // Determine device ID using priority fallback
+    // The current Suricata adapter provides device_id plus a device_id_type hint.
+    if (!macAddress && deviceIdType === "mac" && explicitDeviceId) {
+        macAddress = explicitDeviceId;
+    }
+    if (!ipAddress && deviceIdType === "ip" && explicitDeviceId) {
+        ipAddress = explicitDeviceId;
+    }
+
+    // Determine device ID using priority fallback.
     const deviceId = explicitDeviceId || macAddress || ipAddress || hostname;
 
     if (!deviceId) {
         return { error: "Event must include device_id, mac_address, ip, ip_address, or hostname" };
     }
 
-    // Build normalized event object
+    // Build normalized event object.
     const normalized: NormalizedEvent = {
         ...payload,
         type,
         device_id: deviceId,
     };
 
-    // Normalize optional fields
+    // Normalize optional fields.
     const eventId = readOptionalString(payload.id);
     if (eventId) {
         normalized.id = eventId;
+    }
+
+    if (deviceIdType) {
+        normalized.device_id_type = deviceIdType;
     }
 
     if (macAddress) {
@@ -95,7 +131,7 @@ function normalizeEventPayload(payload: unknown): { event?: NormalizedEvent; err
         normalized.hostname = hostname;
     }
 
-    // Special validation for IDS alerts
+    // Special validation for IDS alerts.
     if (type === "ids_alert") {
         const signature = readOptionalString(payload.signature) || readOptionalString(payload.reason);
         if (!signature) {
@@ -104,7 +140,7 @@ function normalizeEventPayload(payload: unknown): { event?: NormalizedEvent; err
         normalized.signature = signature;
     }
 
-    // Validate timestamp format if provided
+    // Validate timestamp format if provided.
     if (payload.timestamp !== undefined) {
         const timestamp = payload.timestamp;
         if (typeof timestamp !== "number" && typeof timestamp !== "string") {
@@ -122,11 +158,11 @@ function normalizeEventPayload(payload: unknown): { event?: NormalizedEvent; err
  *  - Validates and normalizes payload
  *  - Ensures device exists (or creates it)
  *  - Processes event via correlation engine
- *  - Broadcast event in real-time if not duplicate
+ *  - Broadcasts the event in real-time if not duplicate
  */
 eventsRouter.post("/", async (req, res) => {
     try {
-        // Normalize and validate incoming request body
+        // Normalize and validate incoming request body.
         const normalized = normalizeEventPayload(req.body);
         if (!normalized.event) {
             return res.status(400).json({ error: normalized.error });
@@ -140,15 +176,15 @@ eventsRouter.post("/", async (req, res) => {
             hostname: event.hostname
         });
 
-        // Process event through correlation engine (e.g., deduplication, alertin)
+        // Process event through correlation engine.
         const result = await processEvent(event, device.id);
 
-        // Broadcast event to connected clients if it's not a duplicate
+        // Broadcast event to connected clients if it's not a duplicate.
         if (!result.duplicate) {
             broadcast("event.received", result.event);
         }
 
-        // Return 201 for new events, 200 for duplicates
+        // Return 201 for new events, 200 for duplicates.
         res.status(result.duplicate ? 200 : 201).json(result);
 
     } catch (err) {
