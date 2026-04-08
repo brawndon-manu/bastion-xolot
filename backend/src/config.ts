@@ -54,39 +54,6 @@ const AUTO_QUARANTINE_THRESHOLD = parseInt(
 );
 
 /**
- * Deduplication window for repeating alerts.
- * 
- * If the same alert fingerprint appears again inside this window,
- * the backend refreshes the existing alert instead of creating a new row.
- */
-const ALERT_DEDUP_WINDOW_MS = parseInt(
-    process.env.ALERT_DEDUP_WINDOW_MS || String(5 * 60 * 1000),
-    10
-);
-
-/**
- * Resolution window for anomalies and related alerts.
- * 
- * Once an anomaly has been quiet longer than this window,
- * the backend can mark it and its related alerts as resolved.
- */
-const ANOMALY_RESOLUTION_WINDOW_MS = parseInt(
-    process.env.ANOMALY_RESOLUTION_WINDOW_MS || String(15 * 60 * 1000),
-    10
-);
-
-/**
- * Risk reduction applied for each anomaly that resolves.
- * 
- * This gives the backend a simple recovery path without automatically
- * releasing quarantined devices or hiding active threats.
- */
-const RESOLVED_ANOMALY_RISK_DECAY = parseInt(
-    process.env.RESOLVED_ANOMALY_RISK_DECAY || "10",
-    10
-);
-
-/**
  * Secret used for signing authentication tokens
  * 
  * IMPORTANT:
@@ -122,8 +89,5 @@ export const config = Object.freeze({
     API_PORT,
     MONITOR_ONLY,
     AUTO_QUARANTINE_THRESHOLD,
-    ALERT_DEDUP_WINDOW_MS,
-    ANOMALY_RESOLUTION_WINDOW_MS,
-    RESOLVED_ANOMALY_RISK_DECAY,
     AUTH_SECRET,
 });
