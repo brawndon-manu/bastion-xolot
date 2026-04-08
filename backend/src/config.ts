@@ -76,6 +76,17 @@ const ANOMALY_RESOLUTION_WINDOW_MS = parseInt(
 );
 
 /**
+ * Risk reduction applied for each anomaly that resolves.
+ * 
+ * This gives the backend a simple recovery path without automatically
+ * releasing quarantined devices or hiding active threats.
+ */
+const RESOLVED_ANOMALY_RISK_DECAY = parseInt(
+    process.env.RESOLVED_ANOMALY_RISK_DECAY || "10",
+    10
+);
+
+/**
  * Secret used for signing authentication tokens
  * 
  * IMPORTANT:
@@ -113,5 +124,6 @@ export const config = Object.freeze({
     AUTO_QUARANTINE_THRESHOLD,
     ALERT_DEDUP_WINDOW_MS,
     ANOMALY_RESOLUTION_WINDOW_MS,
+    RESOLVED_ANOMALY_RISK_DECAY,
     AUTH_SECRET,
 });
