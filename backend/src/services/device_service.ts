@@ -35,6 +35,76 @@ type DeviceInput = {
     hostname?: string;
 };
 
+function normalizeMacAddress(value: string | undefined): string | undefined {
+    return value?.trim().toLowerCase() || undefined;
+}
+
+function normalizeIpAddress(value: string | undefined): string | undefined {
+    return value?.trim() || undefined;
+}
+
+function normalizeHostname(value: string | undefined): string | undefined {
+    return value?.trim().toLowerCase() || undefined;
+}
+
+function normalizeDeviceInput(data: DeviceInput): DeviceInput {
+    return {
+        id: data.id?.trim() || undefined,
+        mac_address: normalizeMacAddress(data.mac_address),
+        ip_address: normalizeIpAddress(data.ip_address),
+        hostname: normalizeHostname(data.hostname),
+    };
+}
+
+function getDeviceByField(field: "mac_address" | "ip_address" | "hostname", value: string): Device | undefined {
+    const db = getDb();
+    return db.prepare(`SELECT * FROM devices WHERE ${field} = ? LIMIT 1`).get(value) as Device | undefined;
+}
+
+/**
+ * Resolves the best existing device match from the available identifiers.
+ * 
+ * Matching priority is intentionally identity-first:
+ *  - explicit backend id
+ *  - MAC address
+ *  - IP address
+ *  - hostname
+ * 
+ * This helps prevent the same device from fragmenting across multiple rows
+ * when later events carry a different identifier than the first sighting.
+ */
+function findMatchingDevice(data: DeviceInput): Device | undefined {
+    if (data.id) {
+        const byId = getDevice(data.id);
+        if (byId) {
+            return byId;
+        }
+    }
+
+    if (data.mac_address) {
+        const byMac = getDeviceByField("mac_address", data.mac_address);
+        if (byMac) {
+            return byMac;
+        }
+    }
+
+    if (data.ip_address) {
+        const byIp = getDeviceByField("ip_address", data.ip_address);
+        if (byIp) {
+            return byIp;
+        }
+    }
+
+    if (data.hostname) {
+        const byHostname = getDeviceByField("hostname", data.hostname);
+        if (byHostname) {
+            return byHostname;
+        }
+    }
+
+    return undefined;
+}
+
 /**
  * Creates a brand-new device record and persists it.
  * 
@@ -43,12 +113,13 @@ type DeviceInput = {
  */
 export function createDevice(data: DeviceInput): Device {
     const db = getDb();
+    const normalized = normalizeDeviceInput(data);
 
     const device: Device = {
-        id: data.id || randomUUID(),
-        mac_address: data.mac_address ?? null,
-        ip_address: data.ip_address ?? null,
-        hostname: data.hostname ?? null,
+        id: normalized.id || randomUUID(),
+        mac_address: normalized.mac_address ?? null,
+        ip_address: normalized.ip_address ?? null,
+        hostname: normalized.hostname ?? null,
         first_seen: Date.now(),
         last_seen: Date.now(),
         risk_score: 0,
@@ -119,6 +190,8 @@ export function touchDevice(id: string): void {
  */
 function updateDeviceDetails(id: string, data: DeviceInput): void {
     const db = getDb();
+    const normalized = normalizeDeviceInput(data);
+
     db.prepare(`
         UPDATE devices
         SET mac_address = COALESCE(?, mac_address),
@@ -127,9 +200,9 @@ function updateDeviceDetails(id: string, data: DeviceInput): void {
             last_seen = ?
         WHERE id = ?
     `).run(
-        data.mac_address ?? null,
-        data.ip_address ?? null,
-        data.hostname ?? null,
+        normalized.mac_address ?? null,
+        normalized.ip_address ?? null,
+        normalized.hostname ?? null,
         Date.now(),
         id
     );
@@ -140,22 +213,22 @@ function updateDeviceDetails(id: string, data: DeviceInput): void {
  * 
  * Behavior:
  *  - if device already exists -> refresh details and return updated record
+ *  - if matching device exists under a different identifier -> reuse that device
  *  - if device does not exist -> create it and return new record
  * 
  * This is a key integrity function because alerts, events, and enforcement
  * actions should always point to a known device.
  */
 export function ensureDeviceExists(data: DeviceInput): Device {
-    const id = data.id || randomUUID();
-
-    const existing = getDevice(id);
+    const normalized = normalizeDeviceInput(data);
+    const existing = findMatchingDevice(normalized);
 
     if (existing) {
-        updateDeviceDetails(id, data);
-        return getDevice(id)!;
+        updateDeviceDetails(existing.id, normalized);
+        return getDevice(existing.id)!;
     }
 
-    return createDevice({ ...data, id });
+    return createDevice(normalized);
 }
 
 /**
