@@ -226,7 +226,7 @@ export async function processEvent(event: Record<string, unknown>, deviceId: str
         };
     }
 
-    let riskDelta = 0;                      // Risk score increment
+    let riskDelta = 0;                      // Risk score increment from new suspicious activity
     const alertEmissions: AlertEmission[] = []; // Alerts generated during processing
     let enforcement: unknown = null;        // Enforcement action (if triggered)
     const now = Date.now();
@@ -357,7 +357,26 @@ export async function processEvent(event: Record<string, unknown>, deviceId: str
 
     const alerts = alertEmissions.map((emission) => emission.alert);
 
-    // No detection -> exit early after any lifecycle cleanup
+    /**
+     * ==============================
+     * RISK RECOVERY
+     * ==============================
+     * 
+     * When anomalies resolve, allow the device risk score to recover gradually.
+     * This keeps the system from staying artificially elevated after behavior normalizes.
+     */
+    const riskRecovery = resolvedAnomalies.length > 0
+        ? resolvedAnomalies.length * config.RESOLVED_ANOMALY_RISK_DECAY
+        : 0;
+    const netRiskDelta = riskDelta - riskRecovery;
+
+    let device = getDevice(deviceId);
+
+    if (netRiskDelta !== 0) {
+        device = updateDeviceRisk(deviceId, netRiskDelta) || getDevice(deviceId);
+    }
+
+    // No detection -> exit early after any lifecycle cleanup and risk recovery
     if (riskDelta === 0) {
         for (const resolvedAlert of resolvedAlerts) {
             broadcast("alert.resolved", resolvedAlert);
@@ -370,15 +389,10 @@ export async function processEvent(event: Record<string, unknown>, deviceId: str
             anomaly: ingestion.anomaly,
             resolved_alerts: resolvedAlerts,
             resolved_anomalies: resolvedAnomalies,
+            risk_score: device?.risk_score,
+            device,
         };
     }
-
-    /**
-     * ==============================
-     * UPDATE DEVICE RISK
-     * ==============================
-     */
-    let device = updateDeviceRisk(deviceId, riskDelta) || getDevice(deviceId);
 
     /**
      * ==============================
