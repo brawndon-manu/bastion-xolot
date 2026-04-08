@@ -1,6 +1,5 @@
 import { Router } from "express";
-import { getAlert, listAlerts } from "../services/alert_service";
-import { logger } from "../utils/logger";
+import { listAlerts, getAlert } from "../services/alert_service";
 
 /**
  * Router responsible for alert retrieval endpoints.
@@ -16,54 +15,31 @@ import { logger } from "../utils/logger";
  */
 export const alertsRouter = Router();
 
-function readOptionalString(value: unknown): string | undefined {
-    return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-function readOptionalNumber(value: unknown): number | undefined {
-    if (typeof value === "number" && Number.isFinite(value)) {
-        return value;
-    }
-
-    if (typeof value === "string" && value.trim()) {
-        const parsed = Number(value);
-        if (Number.isFinite(parsed)) {
-            return parsed;
-        }
-    }
-
-    return undefined;
-}
-
 /**
  * GET /alerts
  * 
- * Returns alerts stored in the system, optionally filtered for the needs of
- * the mobile UI, demo views, or operator troubleshooting.
+ * Returns all alerts stored in the system.
+ * 
+ * Behavior:
+ *  - Retrieves alerts from persistence layer
+ *  - Returns alerts ordered by service implemenation
+ *  - Never exposes interal errors to client
+ * 
+ * Failure handling:
+ *  - Logs error for backend diagnostics
+ *  - Returns HTTP 500 without leaking system details
  */
 alertsRouter.get("/", async (req, res) => {
     try {
-        const filters = {
-            status: readOptionalString(req.query.status),
-            device_id: readOptionalString(req.query.device_id),
-            type: readOptionalString(req.query.type),
-            severity: readOptionalString(req.query.severity),
-            since: readOptionalNumber(req.query.since),
-            limit: readOptionalNumber(req.query.limit),
-        };
-
         // Request alert list from service layer
-        const alerts = await listAlerts(filters);
+        const alerts = await listAlerts();
 
         // Send alerts as JSON response
         res.json(alerts);
 
     } catch (err) {
         // Log internal failure for debugging and audit visibility
-        logger.error("Failed to fetch alerts", {
-            error: err instanceof Error ? err.message : String(err),
-            query: req.query,
-        });
+        console.error("Failed to fetch alerts:", err);
 
         // Generic error response for client safety
         res.status(500).json({ error: "Internal server error" });
@@ -118,10 +94,7 @@ alertsRouter.get("/:id", async (req, res) => {
 
     } catch (err) {
         // Log internal failure for diagnostics
-        logger.error("Failed to fetch alert", {
-            error: err instanceof Error ? err.message : String(err),
-            alert_id: req.params.id,
-        });
+        console.error("Failed to fetch alert:", err);
 
         // Do not expose internal details to client
         res.status(500).json({ error: "Internal server error" });

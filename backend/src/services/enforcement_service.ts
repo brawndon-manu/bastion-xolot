@@ -29,17 +29,6 @@ export type EnforcementAction = {
 };
 
 /**
- * Supported filters for enforcement history retrieval.
- */
-export type EnforcementHistoryFilters = {
-    device_id?: string;
-    action?: string;
-    status?: string;
-    initiated_by?: string;
-    limit?: number;
-};
-
-/**
  * Optional metadata passed when triggering enforcement
  */
 type EnforcementOptions = {
@@ -233,44 +222,18 @@ export function unquarantineDevice(
 }
 
 /**
- * Returns enforcement actions ordered by newest first, with optional filters
- * for device, action type, outcome, operator, and result size.
+ * Returns all enforcement actions (most recent first)
+ * 
+ * Used for:
+ *  - GET /enforcement/history
+ *  - auditing
+ *  - UI display
  */
-export function listEnforcementActions(filters: EnforcementHistoryFilters = {}): EnforcementAction[] {
+export function listEnforcementActions(): EnforcementAction[] {
     const db = getDb();
-    const clauses: string[] = [];
-    const params: Array<string | number> = [];
-
-    if (filters.device_id) {
-        clauses.push("device_id = ?");
-        params.push(filters.device_id);
-    }
-
-    if (filters.action) {
-        clauses.push("action = ?");
-        params.push(filters.action);
-    }
-
-    if (filters.status) {
-        clauses.push("status = ?");
-        params.push(filters.status);
-    }
-
-    if (filters.initiated_by) {
-        clauses.push("initiated_by = ?");
-        params.push(filters.initiated_by);
-    }
-
-    const whereClause = clauses.length > 0
-        ? `WHERE ${clauses.join(" AND ")}`
-        : "";
-
-    const limit = Math.max(1, Math.min(filters.limit ?? 100, 500));
 
     return db.prepare(`
         SELECT * FROM enforcement_actions
-        ${whereClause}
         ORDER BY created_at DESC
-        LIMIT ?
-    `).all(...params, limit) as EnforcementAction[];
+    `).all() as EnforcementAction[];
 }

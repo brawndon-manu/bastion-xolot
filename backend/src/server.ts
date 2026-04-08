@@ -1,18 +1,16 @@
 import express from "express";
 import http from "http";
-import { initWebSocket } from "./realtime/websocket";
+import { getRealtimeStatus, initWebSocket } from "./realtime/websocket";
 import { config } from "./config";
 
 import { eventsRouter } from "./routes/events";
 import { alertsRouter } from "./routes/alerts";
-import { healthRouter } from "./routes/health";
 
-import { initDatabase } from "./db/db";
+import { getDb, initDatabase } from "./db/db";
 
 import { devicesRouter } from "./routes/devices";
 
 import { enforcementRouter } from "./routes/enforcement";
-import { logger } from "./utils/logger";
 
 /**
  * ===============================
@@ -56,13 +54,46 @@ app.use(express.json({ limit: "256kb" }));
  * /enforcement -> Response / control actions
  * /events      -> Event ingestion (entry point)
  * /alerts      -> Detection output
- * /health      -> Health and diagnostics
  */
 app.use("/devices", devicesRouter);
 app.use("/enforcement", enforcementRouter);
 app.use("/events", eventsRouter);
 app.use("/alerts", alertsRouter);
-app.use("/health", healthRouter);
+
+/**
+ * ==============================
+ * HEALTH CHECK ENDPOINT
+ * ==============================
+ * 
+ * Endpoint:
+ *  GET /health
+ * 
+ * Used for:
+ *  - Monitoring system status
+ *  - Debugging
+ *  - Deployment verification
+ */
+app.get("/health", (req, res) => {
+
+    // Get database instance/connection
+    const db = getDb();
+
+    // Perform a simple query to verify database connectivity
+    // "SELECT 1" is a lightweight way to check if DB is responsive
+    const dbCheck = db.prepare("SELECT 1 as ok").get() as { ok: number };
+
+    // Return overall system health information
+    res.json({
+        status: "ok",                                                   // Indicates the service is running
+        service: "bastion-backend",                                     // Name of the service (useful for monitoring tools)
+        environment: config.NODE_ENV,                                   // Current environment (development, production, etc.)
+        monitor_only: config.MONITOR_ONLY,                              // Whether the system is in passive monitoring mode (no enforcement actions)
+        auto_quarantine_threshold: config.AUTO_QUARANTINE_THRESHOLD,    // Threshold value used to trigger automatic quarantine actions
+        database: dbCheck.ok === 1 ? "ok" : "degraded",                 // Reports database health based on query result
+        realtime: getRealtimeStatus(),                                  // Status of real-time system (e.g., WebSocket connections)
+        time: new Date().toISOString(),                                 // Current server time (useful for debugging and monitoring)
+    });
+});
 
 /**
  * ==============================
@@ -77,20 +108,11 @@ app.use("/health", healthRouter);
  * NOTE: This should be the LAST middleware
  */
 app.use((req, res) => {
-    logger.warn("Route not found", {
-        method: req.method,
-        url: req.originalUrl,
-    });
-
     res.status(404).json({ error: `Route not found: ${req.method} ${req.originalUrl}` });
 });
 
 app.use((err: any, req: any, res: any, next: any) => {
-    logger.error("Unhandled server error", {
-        method: req?.method,
-        url: req?.originalUrl,
-        error: err instanceof Error ? err.message : String(err),
-    });
+    console.error("Unhandled server error:", err);
 
     if (err?.type === "entity.too.large") {
         return res.status(413).json({ error: "Request body exceeds size limit" });
@@ -132,14 +154,9 @@ initWebSocket(server);
  * Logs key system information for visibility.
  */
 server.listen(config.API_PORT, () => {
-    logger.info("Bastion backend started", {
-        environment: config.NODE_ENV,
-        database_path: config.DB_PATH,
-        api_port: config.API_PORT,
-        monitor_only: config.MONITOR_ONLY,
-        auto_quarantine_threshold: config.AUTO_QUARANTINE_THRESHOLD,
-        alert_dedup_window_ms: config.ALERT_DEDUP_WINDOW_MS,
-        anomaly_resolution_window_ms: config.ANOMALY_RESOLUTION_WINDOW_MS,
-        resolved_anomaly_risk_decay: config.RESOLVED_ANOMALY_RISK_DECAY,
-    });
+    console.log("=====================================");
+    console.log(`Running in: ${config.NODE_ENV}`);
+    console.log(`Database path: ${config.DB_PATH}`);
+    console.log(`API port: ${config.API_PORT}`);
+    console.log("=====================================");
 });

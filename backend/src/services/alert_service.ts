@@ -26,21 +26,6 @@ export type AlertRecord = {
 };
 
 /**
- * Supported alert list filters for GET /alerts.
- * 
- * These keep the API useful for mobile UI screens and demo workflows that
- * only need a subset of the alert stream.
- */
-export type AlertListFilters = {
-    status?: string;
-    device_id?: string;
-    type?: string;
-    severity?: string;
-    since?: number;
-    limit?: number;
-};
-
-/**
  * Builds a stable fingerprint for alert deduplication.
  * 
  * This allows repeated detections of the same condition to refresh one alert
@@ -277,51 +262,22 @@ export function resolveAlertsForDevice(
 }
 
 /**
- * Returns alerts ordered by newest first, with optional filters for status,
- * device, type, severity, time window, and result size.
+ * Returns all alerts ordered by newest first
+ * 
+ * Used by:
+ *  - GET /alerts endpoint
+ *  - Frontend dashboards
+ * 
+ * Behavior:
+ *  - Sorted by created_at DESC for recent-first display
  */
-export function listAlerts(filters: AlertListFilters = {}): AlertRecord[] {
+export function listAlerts(): AlertRecord[] {
     const db = getDb();
-    const clauses: string[] = [];
-    const params: Array<string | number> = [];
-
-    if (filters.status) {
-        clauses.push("status = ?");
-        params.push(filters.status);
-    }
-
-    if (filters.device_id) {
-        clauses.push("device_id = ?");
-        params.push(filters.device_id);
-    }
-
-    if (filters.type) {
-        clauses.push("type = ?");
-        params.push(filters.type);
-    }
-
-    if (filters.severity) {
-        clauses.push("severity = ?");
-        params.push(filters.severity);
-    }
-
-    if (filters.since !== undefined) {
-        clauses.push("created_at >= ?");
-        params.push(filters.since);
-    }
-
-    const whereClause = clauses.length > 0
-        ? `WHERE ${clauses.join(" AND ")}`
-        : "";
-
-    const limit = Math.max(1, Math.min(filters.limit ?? 100, 500));
 
     return db.prepare(`
         SELECT * FROM alerts
-        ${whereClause}
         ORDER BY created_at DESC
-        LIMIT ?
-    `).all(...params, limit) as AlertRecord[];
+    `).all() as AlertRecord[];
 }
 
 /**

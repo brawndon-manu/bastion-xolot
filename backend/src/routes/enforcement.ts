@@ -1,10 +1,9 @@
 import { Router } from "express";
-import {
-    quarantineDevice,
+import { 
+    quarantineDevice, 
     unquarantineDevice,
     listEnforcementActions
-} from "../services/enforcement_service";
-import { logger } from "../utils/logger";
+ } from "../services/enforcement_service";
 
  // Create a new Express router for enforcement-related endpoints
 export const enforcementRouter = Router();
@@ -32,21 +31,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  */
 function readOptionalString(value: unknown): string | undefined {
     return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-function readOptionalNumber(value: unknown): number | undefined {
-    if (typeof value === "number" && Number.isFinite(value)) {
-        return value;
-    }
-
-    if (typeof value === "string" && value.trim()) {
-        const parsed = Number(value);
-        if (Number.isFinite(parsed)) {
-            return parsed;
-        }
-    }
-
-    return undefined;
 }
 
 /**
@@ -89,9 +73,7 @@ function normalizeEnforcementRequest(body: unknown, defaultReason: string): Enfo
  *  - Returns appropriate HTTP status codes based on error type
  */
 function sendEnforcementError(res: any, err: unknown, fallbackMessage: string) {
-    logger.error(fallbackMessage, {
-        error: err instanceof Error ? err.message : String(err),
-    });
+    console.error(fallbackMessage, err);
 
     if (err instanceof Error) {
         // Resource not found -> 404
@@ -125,7 +107,7 @@ async function handleQuarantine(req: any, res: any) {
 
         res.status(201).json(action);
     } catch (err) {
-        sendEnforcementError(res, err, "Quarantine failed");
+        sendEnforcementError(res, err, "Quarantine failed:");
     }
 }
 
@@ -148,31 +130,19 @@ enforcementRouter.post("/release/:id", async (req, res) => {
         });
         res.status(200).json(action);
     } catch (err) {
-        sendEnforcementError(res, err, "Release failed");
+        sendEnforcementError(res, err, "Release failed:");
     }
 });
 
 /**
  * Retrieves enforcement history.
- * 
- * Query filters help the UI focus on one device, one operator, or one action
- * instead of downloading the full audit trail every time.
  */
 enforcementRouter.get("/history", (req, res) => {
     try {
-        const history = listEnforcementActions({
-            device_id: readOptionalString(req.query.device_id),
-            action: readOptionalString(req.query.action),
-            status: readOptionalString(req.query.status),
-            initiated_by: readOptionalString(req.query.initiated_by),
-            limit: readOptionalNumber(req.query.limit),
-        });
+        const history = listEnforcementActions();
         res.json(history);
     } catch (err) {
-        logger.error("Failed to fetch enforcement history", {
-            error: err instanceof Error ? err.message : String(err),
-            query: req.query,
-        });
+        console.error("Failed to fetch enforcement history:", err);
         res.status(500).json({error: "Internal server error" });
     }
 });
