@@ -16,13 +16,13 @@ const initialState: AuthState = {
 };
 
 export const bootstrapAuth = createAsyncThunk("auth/bootstrap", async () => {
-  const token = await api.getStoredToken();
-  return { token };
+  let token = await api.getStoredToken();
+  return { token: token };
 });
 
 export const pairWithGateway = createAsyncThunk("auth/pair", async (pin: string) => {
-  const res = await api.pair(pin);
-  return res;
+  let result = await api.pair(pin);
+  return result;
 });
 
 export const signOut = createAsyncThunk("auth/signOut", async () => {
@@ -34,29 +34,27 @@ const authSlice = createSlice({
   name: "auth",
   initialState,
   reducers: {},
-  extraReducers: (b) => {
-    b.addCase(bootstrapAuth.fulfilled, (s, a) => {
-      s.token = a.payload.token;
-      s.isAuthenticated = !!a.payload.token;
+  extraReducers: (builder) => {
+    builder.addCase(bootstrapAuth.fulfilled, (state, action) => {
+      state.token = action.payload.token;
+      state.isAuthenticated = !!action.payload.token;
     });
-
-    b.addCase(pairWithGateway.pending, (s) => {
-      s.loading = true;
-      s.error = null;
+    builder.addCase(pairWithGateway.pending, (state) => {
+      state.loading = true;
+      state.error = null;
     });
-    b.addCase(pairWithGateway.fulfilled, (s, a) => {
-      s.loading = false;
-      s.token = a.payload.token;
-      s.isAuthenticated = true;
+    builder.addCase(pairWithGateway.fulfilled, (state, action) => {
+      state.loading = false;
+      state.token = action.payload.token;
+      state.isAuthenticated = true;
     });
-    b.addCase(pairWithGateway.rejected, (s, a) => {
-      s.loading = false;
-      s.error = (a.error.message ?? "Pairing failed");
+    builder.addCase(pairWithGateway.rejected, (state, action) => {
+      state.loading = false;
+      state.error = action.error.message || "Pairing failed";
     });
-
-    b.addCase(signOut.fulfilled, (s) => {
-      s.token = null;
-      s.isAuthenticated = false;
+    builder.addCase(signOut.fulfilled, (state) => {
+      state.token = null;
+      state.isAuthenticated = false;
     });
   }
 });

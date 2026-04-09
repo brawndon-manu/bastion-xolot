@@ -4,20 +4,33 @@ import { useDispatch } from "react-redux";
 import { AppDispatch } from "../state/store";
 import { pairWithGateway } from "../state/slices/authSlice";
 
-export default function OnboardingScreen() {
+export default function OnboardingScreen() 
+{
+  /*
+  pin input / error handling
+  */
   const dispatch = useDispatch<AppDispatch>();
   const [pin, setPin] = useState("1234");
   const [error, setError] = useState<string | null>(null);
 
   const onPair = async () => {
     setError(null);
+
     try {
       await dispatch(pairWithGateway(pin)).unwrap();
-    } catch (e: any) {
-      setError(e?.message ?? "Pairing failed");
+    } 
+    catch (error) {
+      setError("Pairing failed");
     }
   };
 
+  let errorMessage = null;
+
+  if (error)
+  {
+    errorMessage = <Text style={styles.error}>{error}</Text>
+  }
+  
   return (
     <View style={styles.root}>
       <Text style={styles.subtitle}>
@@ -34,7 +47,7 @@ export default function OnboardingScreen() {
           placeholderTextColor="#7C889A"
           keyboardType="number-pad"
         />
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+        {errorMessage}
 
         <Pressable style={styles.button} onPress={onPair}>
           <Text style={styles.buttonText}>Pair (demo PIN: 1234)</Text>
@@ -46,20 +59,11 @@ export default function OnboardingScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, padding: 20, backgroundColor: "#0B1220", justifyContent: "center" },
-  title: { color: "#fff", fontSize: 34, fontWeight: "800", marginBottom: 8 },
+  root: { flex: 1, padding: 20, backgroundColor: "#0c0d0e", justifyContent: "center" },
   subtitle: { color: "#B7C0CC", fontSize: 16, marginBottom: 18, lineHeight: 22 },
   card: { backgroundColor: "#111B2E", borderRadius: 16, padding: 16, borderWidth: 1, borderColor: "#1D2B44" },
   label: { color: "#B7C0CC", marginBottom: 8, fontSize: 14 },
-  input: {
-    backgroundColor: "#0B1220",
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: "#fff",
-    borderWidth: 1,
-    borderColor: "#223556"
-  },
+  input: { backgroundColor: "#0B1220", borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, color: "#fff", borderWidth: 1, borderColor: "#223556" },
   button: { marginTop: 14, backgroundColor: "#2E5BFF", borderRadius: 12, paddingVertical: 12, alignItems: "center" },
   buttonText: { color: "#fff", fontWeight: "700" },
   error: { marginTop: 10, color: "#FF6B6B" },

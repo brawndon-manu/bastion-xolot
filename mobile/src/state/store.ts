@@ -4,6 +4,10 @@ import devicesReducer from "./slices/devicesSlice";
 import alertsReducer from "./slices/alertsSlice";
 import settingsReducer from "./slices/settingsSlice";
 
+/**
+ * root redux store configuration
+ * 
+ */
 export const store = configureStore({
   reducer: {
     auth: authReducer,

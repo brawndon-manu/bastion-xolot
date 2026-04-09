@@ -12,8 +12,8 @@ const settingsSlice = createSlice({
   name: "settings",
   initialState,
   reducers: {
-    setMonitorOnly: (s, a: PayloadAction<boolean>) => {
-      s.monitorOnly = a.payload;
+    setMonitorOnly: (state, action: PayloadAction<boolean>) => {
+      state.monitorOnly = action.payload;
     }
   }
 });
