@@ -15,32 +15,40 @@ const initialState: DevicesState = {
 };
 
 export const loadDevices = createAsyncThunk("devices/load", async () => {
-  return api.getDevices();
+  let devices = await api.getDevices();
+  return devices;
 });
 
 const devicesSlice = createSlice({
   name: "devices",
   initialState,
   reducers: {
-    deviceSeen: (s, a) => {
-      const d: Device = a.payload;
-      const idx = s.items.findIndex((x) => x.id === d.id);
-      if (idx >= 0) s.items[idx] = d;
-      else s.items.unshift(d);
+    deviceSeen: (state, action) => {
+      let device: Device = action.payload;
+      let index = state.items.findIndex((x) => x.id === device.id);
+
+      if (index >= 0) 
+      {
+        state.items[index] = device;
+      }
+      else
+      {
+        state.items.unshift(device);
+      }
     }
   },
-  extraReducers: (b) => {
-    b.addCase(loadDevices.pending, (s) => {
-      s.loading = true;
-      s.error = null;
+  extraReducers: (builder) => {
+    builder.addCase(loadDevices.pending, (state) => {
+      state.loading = true;
+      state.error = null;
     });
-    b.addCase(loadDevices.fulfilled, (s, a) => {
-      s.loading = false;
-      s.items = a.payload;
+    builder.addCase(loadDevices.fulfilled, (state, action) => {
+      state.loading = false;
+      state.items = action.payload;
     });
-    b.addCase(loadDevices.rejected, (s, a) => {
-      s.loading = false;
-      s.error = a.error.message ?? "Failed to load devices";
+    builder.addCase(loadDevices.rejected, (state, action) => {
+      state.loading = false;
+      state.error = action.error.message || "Failed to load devices";
     });
   }
 });
@@ -48,6 +56,8 @@ const devicesSlice = createSlice({
 export const { deviceSeen } = devicesSlice.actions;
 
 export const selectDeviceById = (state: RootState, id: string) =>
-  state.devices.items.find((d) => d.id === id);
+{
+  return state.devices.items.find((d) => d.id === id);
+};
 
 export default devicesSlice.reducer;

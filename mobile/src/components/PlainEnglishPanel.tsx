@@ -1,7 +1,10 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 
-export default function PlainEnglishPanel({ text }: { text: string }) {
+/** */
+
+export default function PlainEnglishPanel({ text }: { text: string }) 
+{
   return (
     <View style={styles.panel}>
       <Text style={styles.title}>Plain-English Summary</Text>

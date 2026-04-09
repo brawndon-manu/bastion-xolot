@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { StatusBar, Text } from "react-native";
+import { StatusBar } from "react-native";
 import { Provider, useDispatch, useSelector } from "react-redux";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
@@ -7,7 +7,6 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { store, RootState, AppDispatch } from "./state/store";
 import { bootstrapAuth } from "./state/slices/authSlice";
 import Icon from "react-native-vector-icons/Feather";
-
 import OnboardingScreen from "./screens/OnboardingScreen";
 import DashboardScreen from "./screens/DashboardScreen";
 import DevicesScreen from "./screens/DevicesScreen";
@@ -36,30 +35,21 @@ export type RootStackParamList = {
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tabs = createBottomTabNavigator<MainTabParamList>();
 
-function TabIcon({ focused, name }: { focused: boolean; name: string }) {
-  return (
-    <Icon
-      name={name}
-      size={20}
-      color={focused ? "#18E36B" : "#8FA0B5"}
-    />
-  );
-}
-
-function MainTabs() {
+/**
+ * Main tab navigation shell
+ * Resonsible for defining top level authenticated navigation, 
+ * assigining icons and labels for each tab, 
+ * applying shared tab styling 
+*/
+function MainTabs() 
+{
   return (
     <Tabs.Navigator
       screenOptions={{
-        headerStyle: { backgroundColor: "#0B1220" },
+        headerStyle: { backgroundColor: "#0c0d0e" },
         headerTintColor: "#fff",
         headerTitleAlign: "center",
-        tabBarStyle: {
-          backgroundColor: "#0B1220",
-          borderTopColor: "#1D2B44",
-          height: 64,
-          paddingBottom: 10,
-          paddingTop: 8
-        },
+        tabBarStyle: { backgroundColor: "#0c0d0e", borderTopColor: "#1D2B44", height: 64, paddingBottom: 10, paddingTop: 8 },
         tabBarActiveTintColor: "#18E36B",
         tabBarInactiveTintColor: "#8FA0B5",
         tabBarLabelStyle: { fontSize: 12, fontWeight: "700" }
@@ -72,8 +62,9 @@ function MainTabs() {
           title: "Dashboard",
           headerTitle: "Bastión Xólot",
           tabBarLabel: "Dashboard",
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} name="home" />
-        }}
+          tabBarIcon: ({ focused }) => ( 
+          <Icon name = "home" size={20} color={focused ? "#18E36B" : "#8FA0B5"} />
+          )}}
       />
 
       <Tabs.Screen
@@ -83,8 +74,9 @@ function MainTabs() {
           title: "Devices",
           headerTitle: "Devices",
           tabBarLabel: "Devices",
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} name="monitor" />
-        }}
+          tabBarIcon: ({ focused }) => (
+          <Icon name="monitor" size={20} color={focused ? "#18E36B" : "#8FA0B5"} />
+          )}}
       />
 
       <Tabs.Screen
@@ -94,8 +86,9 @@ function MainTabs() {
           title: "Alerts",
           headerTitle: "Alerts",
           tabBarLabel: "Alerts",
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} name="alert-triangle" />
-        }}
+          tabBarIcon: ({ focused }) => (
+          <Icon name="alert-triangle" size={20} color={focused ? "#18E36B" : "#8FA0B5"} />
+          )}}
       />
 
       <Tabs.Screen
@@ -105,43 +98,73 @@ function MainTabs() {
           title: "Settings",
           headerTitle: "Settings",
           tabBarLabel: "Settings",
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} name="settings" />
-        }}
+          tabBarIcon: ({ focused }) => (
+          <Icon name="settings" size={20} color={focused ? "#18E36B" : "#8FA0B5"} />
+          )}}
       />
     </Tabs.Navigator>
   );
 }
 
-function AppInner() {
+function AppInner() 
+{
   const dispatch = useDispatch<AppDispatch>();
-  const authed = useSelector((s: RootState) => s.auth.isAuthenticated);
+  const authed = useSelector((state: RootState) => state.auth.isAuthenticated);
 
   useEffect(() => {
     dispatch(bootstrapAuth());
   }, [dispatch]);
 
+  if (!authed)
+  {
+    return (
+      <NavigationContainer>
+        <StatusBar barStyle="light-content" />
+        <Stack.Navigator
+          screenOptions={{
+            headerStyle: { backgroundColor: "#0c0d0e" },
+            headerTintColor: "#fff",
+            contentStyle: { backgroundColor: "#0c0d0e" },
+            headerTitleAlign: "center"
+          }}
+        >
+            <Stack.Screen name="Onboarding" component={OnboardingScreen} options={{ title: "BASTIÓN XÓLOT" }} />
+        </Stack.Navigator>
+      </NavigationContainer>
+    );
+  }
+
   return (
-    <NavigationContainer>
+        <NavigationContainer>
       <StatusBar barStyle="light-content" />
       <Stack.Navigator
         screenOptions={{
-          headerStyle: { backgroundColor: "#0B1220" },
+          headerStyle: { backgroundColor: "#0c0d0e" },
           headerTintColor: "#fff",
-          contentStyle: { backgroundColor: "#0B1220" },
+          contentStyle: { backgroundColor: "#0c0d0e" },
           headerTitleAlign: "center"
         }}
       >
-        {!authed ? (
-          <Stack.Screen name="Onboarding" component={OnboardingScreen} options={{ title: "BASTIÓN XÓLOT" }} />
-        ) : (
-          <>
-            <Stack.Screen name="MainTabs" component={MainTabs} options={{ headerShown: false }} />
-            {}
-            <Stack.Screen name="DeviceDetail" component={DeviceDetailScreen} options={{ title: "Device" }} />
-            <Stack.Screen name="AlertDetail" component={AlertDetailScreen} options={{ title: "Alert Details" }} />
-            <Stack.Screen name="Controls" component={ControlsScreen} options={{ title: "Controls" }} />
-          </>
-        )}
+        <Stack.Screen
+          name="MainTabs"
+          component={MainTabs}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="DeviceDetail"
+          component={DeviceDetailScreen}
+          options={{ title: "Device" }}
+        />
+        <Stack.Screen
+          name="AlertDetail"
+          component={AlertDetailScreen}
+          options={{ title: "Alert Details" }}
+        />
+        <Stack.Screen
+          name="Controls"
+          component={ControlsScreen}
+          options={{ title: "Controls" }}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );

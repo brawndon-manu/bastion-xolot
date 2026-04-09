@@ -15,37 +15,63 @@ const initialState: AlertsState = {
 };
 
 export const loadAlerts = createAsyncThunk("alerts/load", async () => {
-  return api.getAlerts();
+  let alerts = await api.getAlerts();
+  return alerts;
 });
+
+/**
+ * alert
+ */
 
 const alertsSlice = createSlice({
   name: "alerts",
   initialState,
   reducers: {
-    alertReceived: (s, a) => {
-      const alert: Alert = a.payload;
-      s.items.unshift(alert);
+    alertUpsert: (state, action) => {
+      let incoming: Alert = action.payload;
+      let index = state.items.findIndex((x) => x.id === incoming.id);
+
+      if (index >= 0)
+        {
+          state.items[index] = incoming;
+        } 
+        else 
+        {
+          state.items.unshift(incoming);
+        }
+      },
+      alertResolved: (state, action) => {
+      let incoming: Alert = action.payload;
+      let index = state.items.findIndex((x) => x.id === incoming.id);
+
+      if (index >= 0) {
+        state.items[index] = incoming;
+      } else {
+        state.items.unshift(incoming);
+      }
     }
   },
-  extraReducers: (b) => {
-    b.addCase(loadAlerts.pending, (s) => {
-      s.loading = true;
-      s.error = null;
+  extraReducers: (builder) => {
+    builder.addCase(loadAlerts.pending, (state) => {
+      state.loading = true;
+      state.error = null;
     });
-    b.addCase(loadAlerts.fulfilled, (s, a) => {
-      s.loading = false;
-      s.items = a.payload;
+    builder.addCase(loadAlerts.fulfilled, (state, action) => {
+      state.loading = false;
+      state.items = action.payload;
     });
-    b.addCase(loadAlerts.rejected, (s, a) => {
-      s.loading = false;
-      s.error = a.error.message ?? "Failed to load alerts";
+    builder.addCase(loadAlerts.rejected, (state, action) => {
+      state.loading = false;
+      state.error = action.error.message || "Failed to load alerts";
     });
   }
 });
 
-export const { alertReceived } = alertsSlice.actions;
+export const { alertUpsert, alertResolved } = alertsSlice.actions;
 
 export const selectAlertById = (state: RootState, id: string) =>
-  state.alerts.items.find(a => a.id === id);
+{
+  return state.alerts.items.find((a) => a.id === id);
+};
 
 export default alertsSlice.reducer;
