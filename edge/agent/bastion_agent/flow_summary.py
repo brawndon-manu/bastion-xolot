@@ -1,8 +1,8 @@
 """
-Bastión Xólot — Flow Summary Module (Phase 3)
+Bastión Xólot — Flow Summary Module (Phase 3, enriched for Phase 9A)
 
 Collects network metadata (NOT packet payloads) to build per-device
-traffic summaries.  These summaries feed into the baseline and
+traffic summaries. These summaries feed into the baseline and
 anomaly detection modules.
 
 Data source: Linux conntrack (connection tracking table)
@@ -16,13 +16,14 @@ Metadata collected per device per interval:
   - Total connection count
   - Byte volumes (outbound + inbound)
 
+Phase 9A enrichment:
+  - Preserves the existing stored/event summary shape
+  - Adds in-memory scan-oriented fields so anomaly detection can reason
+    about one-target multi-port probing without changing SQLite schema
+    or backend event contracts yet
+
 Satisfies Requirement 1.5 (Metadata-Based Traffic Monitoring):
   "The system shall collect network metadata only, not packet payloads."
-
-Prerequisites (owned by Systems Architect):
-  - nf_conntrack kernel module must be loaded
-  - conntrack-tools package should be installed
-  - nftables rules must be in place for connection tracking
 """
 
 import re
@@ -96,10 +97,9 @@ def _read_conntrack() -> list[dict]:
     Read the conntrack table. Tries `conntrack -L` first,
     falls back to /proc/net/nf_conntrack.
     """
-    # Try conntrack command
     try:
         result = subprocess.run(
-            ["conntrack", "-L", "-f", "ipv4", "-o", "extended"],
+            ["sudo", "conntrack", "-L", "-f", "ipv4", "-o", "extended"],
             capture_output=True,
             text=True,
             timeout=15,
@@ -117,7 +117,6 @@ def _read_conntrack() -> list[dict]:
     except subprocess.TimeoutExpired:
         logger.warning("conntrack -L timed out")
 
-    # Fallback: read /proc/net/nf_conntrack directly
     try:
         with open("/proc/net/nf_conntrack", "r") as f:
             lines = f.readlines()
@@ -138,6 +137,19 @@ def _read_conntrack() -> list[dict]:
         return []
 
 
+def _new_device_bucket() -> dict:
+    return {
+        "connections": 0,
+        "bytes_out": 0,
+        "bytes_in": 0,
+        "destinations": set(),
+        "ports": set(),
+        "protocols": set(),
+        "destination_ports": defaultdict(set),
+        "destination_connections": defaultdict(int),
+    }
+
+
 def _aggregate_by_device(
     connections: list[dict], lan_ips: set[str]
 ) -> dict[str, dict]:
@@ -147,14 +159,7 @@ def _aggregate_by_device(
     Only includes connections originating from known LAN devices
     (identified by source IP being in the known_devices table).
     """
-    device_data: dict[str, dict] = defaultdict(lambda: {
-        "connections": 0,
-        "bytes_out": 0,
-        "bytes_in": 0,
-        "destinations": set(),
-        "ports": set(),
-        "protocols": set(),
-    })
+    device_data: dict[str, dict] = defaultdict(_new_device_bucket)
 
     for conn in connections:
         src_ip = conn["src_ip"]
@@ -168,11 +173,58 @@ def _aggregate_by_device(
         d["bytes_out"] += conn["bytes_out"]
         d["bytes_in"] += conn["bytes_in"]
         d["destinations"].add(conn["dst_ip"])
+
         if conn["dst_port"]:
             d["ports"].add(conn["dst_port"])
+            d["destination_ports"][conn["dst_ip"]].add(conn["dst_port"])
+
+        d["destination_connections"][conn["dst_ip"]] += 1
         d["protocols"].add(conn["protocol"])
 
     return dict(device_data)
+
+
+def _build_scan_metadata(data: dict) -> dict:
+    """
+    Build scan-oriented metadata from the aggregated device view.
+
+    This does not change what is stored in SQLite or sent to the backend yet.
+    It enriches the returned summary so anomaly.py can reason about patterns like:
+      - one destination hit across many ports
+      - repeated attempts concentrated on one destination
+    """
+    candidates = []
+
+    for dst_ip, ports in data["destination_ports"].items():
+        unique_ports = len(ports)
+        connections = data["destination_connections"].get(dst_ip, 0)
+
+        candidates.append({
+            "dst_ip": dst_ip,
+            "unique_ports": unique_ports,
+            "connections": connections,
+            "ports": sorted(ports),
+        })
+
+    candidates.sort(
+        key=lambda item: (
+            item["unique_ports"],
+            item["connections"],
+            item["dst_ip"],
+        ),
+        reverse=True,
+    )
+
+    top = candidates[0] if candidates else None
+
+    return {
+        "unique_ports": len(data["ports"]),
+        "max_ports_single_dest": top["unique_ports"] if top else 0,
+        "max_connections_single_dest": top["connections"] if top else 0,
+        "top_port_fanout_dest": top["dst_ip"] if top else None,
+        "top_port_fanout_ports": top["ports"] if top else [],
+        "scan_candidates": candidates[:3],
+    }
 
 
 def collect_flow_summaries() -> list[dict]:
@@ -182,11 +234,10 @@ def collect_flow_summaries() -> list[dict]:
     For each LAN device with active connections:
       1. Reads conntrack table
       2. Aggregates by source device IP
-      3. Maps IP → MAC using known_devices
-      4. Stores summary in local SQLite
-      5. Builds and enqueues flow_summary events
-
-    Returns list of flow summary dicts (one per device with traffic).
+      3. Maps IP -> MAC using known_devices
+      4. Stores the base summary in local SQLite
+      5. Builds and enqueues the existing flow_summary event contract
+      6. Returns an enriched summary for local detection logic
     """
     connections = _read_conntrack()
     if not connections:
@@ -206,7 +257,7 @@ def collect_flow_summaries() -> list[dict]:
         if not mac:
             continue
 
-        summary = {
+        base_summary = {
             "mac_address": mac,
             "ip_address": ip,
             "connections": data["connections"],
@@ -218,24 +269,29 @@ def collect_flow_summaries() -> list[dict]:
             "protocols": sorted(data["protocols"]),
         }
 
-        # Persist locally
+        enriched_summary = {
+            **base_summary,
+            **_build_scan_metadata(data),
+        }
+
+        # Persist the existing base shape only
         store_flow_summary(
             mac=mac,
             ip=ip,
-            connections=summary["connections"],
-            bytes_out=summary["bytes_out"],
-            bytes_in=summary["bytes_in"],
-            unique_dests=summary["unique_dests"],
-            destinations=json.dumps(summary["destinations"]),
-            ports=json.dumps(summary["ports"]),
-            protocols=json.dumps(summary["protocols"]),
+            connections=base_summary["connections"],
+            bytes_out=base_summary["bytes_out"],
+            bytes_in=base_summary["bytes_in"],
+            unique_dests=base_summary["unique_dests"],
+            destinations=json.dumps(base_summary["destinations"]),
+            ports=json.dumps(base_summary["ports"]),
+            protocols=json.dumps(base_summary["protocols"]),
         )
 
-        # Build and enqueue event for backend
-        event = build_flow_summary(mac, summary)
+        # Enqueue the existing event shape only
+        event = build_flow_summary(mac, base_summary)
         enqueue_and_dispatch(event)
 
-        results.append(summary)
+        results.append(enriched_summary)
 
     if results:
         logger.info(

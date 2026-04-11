@@ -1,0 +1,20 @@
+[Unit]
+Description=Bastion Xolot Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bastion
+Group=bastion
+WorkingDirectory=/home/bastion/bastion-xolot/edge/agent
+EnvironmentFile=/home/bastion/bastion-xolot/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/bastion/bastion-xolot/venv/bin/python -m bastion_agent.main
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
