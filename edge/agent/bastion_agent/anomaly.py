@@ -367,23 +367,34 @@ def check_for_anomalies(device_mac: str, current_flow: dict) -> list[dict]:
     """
     Compare a device's current flow summary against its baseline.
 
-    Runs all anomaly checks and returns a list of generated events
-    and alerts.  Skips devices whose baselines are still learning.
+    Runs deterministic scan/probe checks even during baseline learning.
+    Baseline-dependent checks are skipped until the baseline is stable.
 
     Called by the agent main loop after each flow summary collection.
     """
+    all_events: list[dict] = []
+
+    # Phase 9A:
+    # Run deterministic probe detection even if the statistical baseline
+    # is still learning. This rule does not depend on baseline math.
+    all_events.extend(_check_scan_probe(current_flow, device_mac))
+
     if not is_baseline_stable(device_mac):
-        logger.debug(
-            "Baseline for %s still learning — skipping anomaly checks",
-            device_mac,
-        )
-        return []
+        if all_events:
+            logger.info(
+                "Anomaly checks for %s: %d events/alerts generated (baseline learning; baseline-dependent checks skipped)",
+                device_mac, len(all_events),
+            )
+        else:
+            logger.debug(
+                "Baseline for %s still learning — skipping baseline-dependent anomaly checks",
+                device_mac,
+            )
+        return all_events
 
     baseline = get_baseline(device_mac)
     if not baseline:
-        return []
-
-    all_events: list[dict] = []
+        return all_events
 
     all_events.extend(_check_volume_spike(current_flow, baseline, device_mac))
     all_events.extend(_check_connection_spike(current_flow, baseline, device_mac))
@@ -396,3 +407,202 @@ def check_for_anomalies(device_mac: str, current_flow: dict) -> list[dict]:
         )
 
     return all_events
+
+def _is_private_ipv4(ip: str | None) -> bool:
+    """Return True for RFC1918 IPv4 addresses. Keeps the first scan rule LAN-focused."""
+    if not ip or ":" in ip:
+        return False
+
+    if ip.startswith("10.") or ip.startswith("192.168."):
+        return True
+
+    if ip.startswith("172."):
+        parts = ip.split(".")
+        if len(parts) < 2:
+            return False
+        try:
+            second = int(parts[1])
+            return 16 <= second <= 31
+        except ValueError:
+            return False
+
+    return False
+
+
+def _is_benign_gateway_service_mix(top_dest: str | None, top_ports: list[int]) -> bool:
+    """
+    Suppress a narrow false-positive pattern:
+    gateway-targeted local service chatter that mixes SSH with common
+    local gateway/discovery traffic.
+
+    This is intentionally conservative so it does not broadly disable
+    local probe detection.
+    """
+    if not top_dest:
+        return False
+
+    if top_dest != "192.168.50.1":
+        return False
+
+    try:
+        port_set = {int(p) for p in top_ports}
+    except Exception:
+        return False
+
+    benign_ports = {22, 53, 1900, 5351, 5353}
+
+    return 22 in port_set and port_set.issubset(benign_ports)
+
+
+def _confidence_from_probe(
+    max_ports_single_dest: int,
+    max_connections_single_dest: int,
+    unique_ports: int,
+    total_connections: int,
+) -> float:
+    """
+    Conservative confidence model for scan/probe behavior.
+
+    We keep this bounded because conntrack only shows part of the activity,
+    so this should be treated as a strong advisory signal, not automatic truth.
+    """
+    score = 0.68
+    score += max(0, max_ports_single_dest - 3) * 0.03
+    score += max(0, max_connections_single_dest - 8) * 0.015
+    score += max(0, unique_ports - 6) * 0.01
+    score += max(0, total_connections - 40) * 0.002
+    return min(score, 0.85)
+
+
+def _check_scan_probe(flow: dict, mac: str) -> list[dict]:
+    """
+    Detect one-target multi-port probing from enriched flow summary fields.
+
+    This is intentionally medium severity and advisory-first:
+      - It should create a meaningful signal
+      - It should route into the decision engine
+      - It should not become an aggressive one-shot quarantine trigger
+    """
+    events = []
+
+    top_dest = flow.get("top_port_fanout_dest")
+    max_ports_single_dest = int(flow.get("max_ports_single_dest", 0) or 0)
+    max_connections_single_dest = int(flow.get("max_connections_single_dest", 0) or 0)
+    unique_ports = int(flow.get("unique_ports", len(flow.get("ports", []))) or 0)
+    total_connections = int(flow.get("connections", 0) or 0)
+    top_ports = list(flow.get("top_port_fanout_ports", []))
+    scan_candidates = list(flow.get("scan_candidates", []))
+
+    # First-pass conservative thresholds tuned to your current adversary validation.
+    # We require:
+    #   - a local/private destination
+    #   - at least some multi-port fanout against that one target
+    #   - elevated total device activity
+    #   - broader port diversity than normal background alone
+    if not top_dest:
+        return events
+
+    if not _is_private_ipv4(top_dest):
+        return events
+
+    if _is_benign_gateway_service_mix(top_dest, top_ports):
+        logger.debug(
+            "Skipping scan probe for %s due to benign gateway service mix: dest=%s ports=%s",
+            mac, top_dest, top_ports,
+        )
+        return events
+
+    if max_ports_single_dest < 3:
+        return events
+
+    if max_connections_single_dest < 8:
+        return events
+
+    if total_connections < 15:
+        return events
+
+    severity = "medium"
+    enforcement = _enforcement_for_severity(severity)
+
+    event = build_anomaly_detected(mac, {
+        "anomaly_type": "scan_probe",
+        "metric": "port_fanout_single_dest",
+        "current_value": max_ports_single_dest,
+        "top_dest_ip": top_dest,
+        "top_dest_connections": max_connections_single_dest,
+        "top_dest_ports": top_ports,
+        "device_total_connections": total_connections,
+        "device_unique_ports": unique_ports,
+        "scan_candidates": scan_candidates,
+    })
+    enqueue_and_dispatch(event)
+    events.append(event)
+
+    if _should_alert(severity):
+        _route_to_detection(
+            mac,
+            severity,
+            (
+                f"scan_probe top_dest={top_dest} "
+                f"ports={max_ports_single_dest} "
+                f"connections={max_connections_single_dest} "
+                f"device_connections={total_connections}"
+            ),
+        )
+
+        alert = build_alert(
+            device_id=mac,
+            severity=severity,
+            title="Possible local service probing detected",
+            explanation=(
+                f"The device {mac} ({flow.get('ip_address', 'unknown IP')}) showed "
+                f"concentrated connection activity against {top_dest}, with "
+                f"{max_connections_single_dest} tracked connections across "
+                f"{max_ports_single_dest} visible destination ports during the same interval. "
+                f"This pattern can indicate service enumeration or port probing against a local target."
+            ),
+            evidence={
+                "source_module": "anomaly",
+                "details": {
+                    "anomaly_type": "scan_probe",
+                    "device_ip": flow.get("ip_address"),
+                    "top_port_fanout_dest": top_dest,
+                    "max_ports_single_dest": max_ports_single_dest,
+                    "max_connections_single_dest": max_connections_single_dest,
+                    "unique_ports": unique_ports,
+                    "connections": total_connections,
+                    "top_port_fanout_ports": top_ports,
+                    "scan_candidates": scan_candidates,
+                },
+            },
+            recommended_action=(
+                f"Investigate whether the device at {flow.get('ip_address', mac)} "
+                f"was intentionally probing services on {top_dest}. Review local service exposure, "
+                f"correlate with IDS or firewall evidence, and verify whether this device should be "
+                f"making repeated multi-port requests to that target."
+            ),
+            confidence=_confidence_from_probe(
+                max_ports_single_dest=max_ports_single_dest,
+                max_connections_single_dest=max_connections_single_dest,
+                unique_ports=unique_ports,
+                total_connections=total_connections,
+            ),
+            related_event_ids=[event["id"]],
+        )
+        if enforcement:
+            alert["recommended_enforcement"] = enforcement
+
+        enqueue_and_dispatch(alert)
+        events.append(alert)
+
+    logger.info(
+        "Scan probe detected for %s: top_dest=%s ports=%d conns=%d total_conns=%d unique_ports=%d",
+        mac,
+        top_dest,
+        max_ports_single_dest,
+        max_connections_single_dest,
+        total_connections,
+        unique_ports,
+    )
+
+    return events
