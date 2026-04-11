@@ -42,6 +42,7 @@ from bastion_agent.dns_monitor import DnsMonitor
 from bastion_agent.flow_summary import collect_flow_summaries
 from bastion_agent.baseline import update_baseline
 from bastion_agent.anomaly import check_for_anomalies
+from bastion_agent.gateway_probe_monitor import route_gateway_probe_signals
 from bastion_agent.events import dispatch_to_backend
 
 logger = logging.getLogger("bastion_agent")
@@ -148,11 +149,21 @@ async def flow_anomaly_loop() -> None:
             for summary in summaries:
                 mac = summary["mac_address"]
 
-                # Update the baseline model with this summary
+                # Update the baseline with the latest flow data.
                 update_baseline(mac, summary)
 
-                # Check for anomalies against the baseline
+                # Run anomaly checks for this device.
                 check_for_anomalies(mac, summary)
+
+            # Check recent gateway-targeted TCP probe activity.
+            gateway_results = route_gateway_probe_signals(
+                f"{FLOW_SUMMARY_INTERVAL} seconds ago"
+            )
+            if gateway_results:
+                logger.info(
+                    "Gateway probe cycle: %d normalized signals routed",
+                    len(gateway_results),
+                )
 
             if summaries:
                 logger.info(
