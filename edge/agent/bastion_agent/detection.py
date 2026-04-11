@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Dict, Any
 from bastion_agent import enforcement
 from bastion_agent.config import PROTECTED_MACS
+from bastion_agent.decision_engine import score_event, action_tier
 
 
 def handle_event(event: Dict[str, Any]) -> dict:
@@ -38,35 +39,68 @@ def handle_event(event: Dict[str, Any]) -> dict:
             }
         }
 
+    # DECISION ENGINE (Phase 8 R1)
+    score = score_event(event)
+    tier = action_tier(score)
+
     # Only MAC-identified devices are eligible for enforcement
     if device_id_type != "mac":
         return {
             "result": {
                 "status": "IGNORED",
                 "reason": f"unresolved device identity ({device_id_type})"
+            },
+            "decision": {
+                "score": score,
+                "tier": tier,
             }
         }
 
-    # POLICY ENGINE (Phase 5 R2)
-    if severity == "high":
-        return enforcement.request_quarantine_hard(
+    # POLICY ENGINE (Phase 8 R1)
+    if tier == "hard_quarantine":
+        result = enforcement.request_quarantine_hard(
             mac=device_id,
             reason=reason,
             actor="detection"
         )
+        result["decision"] = {
+            "score": score,
+            "tier": tier,
+        }
+        return result
 
-    elif severity == "medium":
+    elif tier == "soft_quarantine":
         return {
             "result": {
-                "status": "IGNORED",
-                "reason": "medium severity (monitor only)"
+                "status": "SOFT_QUARANTINE_CANDIDATE",
+                "reason": "score threshold reached"
+            },
+            "decision": {
+                "score": score,
+                "tier": tier,
             }
         }
 
-    # LOW severity -> ignore
+    elif tier == "alert":
+        return {
+            "result": {
+                "status": "ALERT_ONLY",
+                "reason": "score threshold reached"
+            },
+            "decision": {
+                "score": score,
+                "tier": tier,
+            }
+        }
+
+    # MONITOR tier -> ignore
     return {
         "result": {
             "status": "IGNORED",
-            "reason": "low severity"
+            "reason": "below action threshold"
+        },
+        "decision": {
+            "score": score,
+            "tier": tier,
         }
     }
