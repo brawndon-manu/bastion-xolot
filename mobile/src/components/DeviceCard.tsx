@@ -20,8 +20,8 @@ export default function DeviceCard({ device }: { device: Device })
 }
 
 const styles = StyleSheet.create({
-  card: { backgroundColor: "#0F1A2F", borderRadius: 16, padding: 14, borderWidth: 1, borderColor: "#1D2B44" },
+  card: { backgroundColor: "#fff", borderRadius: 16, padding: 14, borderWidth: 1, borderColor: "#fff" },
   top: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 10 },
-  name: { color: "#fff", fontWeight: "800", fontSize: 16, flexShrink: 1 },
-  meta: { color: "#B7C0CC", marginTop: 2 },
+  name: { color: "#0c0d0e", fontWeight: "800", fontSize: 16, flexShrink: 1 },
+  meta: { color: "#0c0d0e", marginTop: 2 },
 });

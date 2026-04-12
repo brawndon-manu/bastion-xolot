@@ -21,7 +21,7 @@ export default function AlertCard({ alert }: { alert: Alert })
     }
 
   return (
-    <View style={[styles.card, severityStyle]}>
+    <View style={styles.card}>
       <View style={styles.top}>
         <Text style={styles.title}>{alert.title}</Text>
         <View style={[styles.sev, severityStyle]}>
@@ -53,16 +53,16 @@ export default function AlertCard({ alert }: { alert: Alert })
 }
 
 const styles = StyleSheet.create({
-  card: { backgroundColor: "#0F1A2F", borderRadius: 16, padding: 14, borderWidth: 1 },
+  card: { backgroundColor: "#fff", borderRadius: 16, padding: 14, borderWidth: 1, borderColor: "#fff" },
   top: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 8 },
-  title: { color: "#fff", fontWeight: "800", fontSize: 16, flexShrink: 1 },
-  preview: { color: "#B7C0CC", lineHeight: 20 },
-  time: { color: "#8FA0B5", marginTop: 10, fontSize: 12 },
+  title: { color: "#0c0d0e", fontWeight: "800", fontSize: 16, flexShrink: 1 },
+  preview: { color: "#0c0d0e", lineHeight: 20 },
+  time: { color: "#0c0d0e", marginTop: 10, fontSize: 12 },
   sev: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, borderWidth: 1 },
   sevText: { color: "#fff", fontSize: 12, fontWeight: "800" },
-  high: { borderColor: "#B23A3A" },
-  med: { borderColor: "#B7892E" },
-  low: { borderColor: "#2E5BFF" },
+  high: { borderColor: "#B23A3A", backgroundColor: "#FF4D4D" },
+  med: { borderColor: "#B7892E", backgroundColor: "#FFD166"},
+  low: { borderColor: "#2E5BFF", backgroundColor: "#2E5BFF" },
   badgeRow: { flexDirection: "row", gap: 8, marginBottom: 10, flexWrap: "wrap" },
   typeBadge: { backgroundColor: "#1A2740", borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: "#2E5BFF" },
   typeBadgeText: { color: "#fff", fontSize: 11, fontWeight: "700" },

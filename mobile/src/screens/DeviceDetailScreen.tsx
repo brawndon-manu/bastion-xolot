@@ -10,7 +10,7 @@ import { api } from "../api/client";
 
 type Props = NativeStackScreenProps<RootStackParamList, "DeviceDetail">;
 
-export default function DeviceDetailScreen({ route, navigation }: Props) 
+export default function DeviceDetailScreen({ route }: Props) 
 {
   const dispatch = useDispatch<AppDispatch>();
   const device = useSelector((state: RootState) => selectDeviceById(state, route.params.deviceId));
@@ -60,6 +60,7 @@ export default function DeviceDetailScreen({ route, navigation }: Props)
       {
         message = error.message;
       }
+      Alert.alert("Error", message);
     } 
     finally {
       setBusy(false);
@@ -129,7 +130,6 @@ export default function DeviceDetailScreen({ route, navigation }: Props)
   return (
     <View style={styles.root}>
       <Text style={styles.title}>{device.name}</Text>
-      <Text style={styles.muted}>{device.trusted ? "Trusted device" : "Unknown device"}</Text>
 
       <View style={styles.statusRow}>
         <Text style={styles.statusLabel}>Behavioral status</Text>
@@ -148,11 +148,6 @@ export default function DeviceDetailScreen({ route, navigation }: Props)
 
       {actionButton}
 
-      <Pressable
-          style={[styles.btn, styles.secondaryBtn]}
-          onPress={() => navigation.navigate("Controls")}>
-        <Text style={styles.btnText}>View Controls & History</Text>
-      </Pressable>
     </View>
   );
 }
@@ -168,19 +163,18 @@ function Row({ label, value }: { label: string; value: string })
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, padding: 16, backgroundColor: "#0B1220" },
-  title: { color: "#fff", fontSize: 22, fontWeight: "800", marginBottom: 6 },
-  muted: { color: "#B7C0CC", marginBottom: 12 },
+  root: { flex: 1, padding: 16, backgroundColor: "#c4c4cc" },
+  title: { color: "#0c0d0e", fontSize: 22, fontWeight: "800", marginBottom: 6 },
+  muted: { color: "#1c1c1d", marginBottom: 12 },
   statusRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
-  statusLabel: { color: "#fff", fontWeight: "700", fontSize: 14 },
-  card: { backgroundColor: "#111B2E", borderRadius: 16, padding: 14, borderWidth: 1, borderColor: "#1D2B44", gap: 10 },
+  statusLabel: { color: "#0c0d0e", fontWeight: "700", fontSize: 14 },
+  card: { backgroundColor: "#fff", borderRadius: 16, padding: 14, borderWidth: 1, borderColor: "#fff", gap: 10 },
   row: { flexDirection: "row", justifyContent: "space-between", gap: 12 },
-  rowLabel: { color: "#8FA0B5" },
-  rowValue: { color: "#fff", flexShrink: 1, textAlign: "right" },
+  rowLabel: { color: "#2f353d" },
+  rowValue: { color: "#0c0d0e", flexShrink: 1, textAlign: "right" },
   btn: { marginTop: 14, borderRadius: 12, paddingVertical: 12, alignItems: "center" },
   quarantineBtn: { backgroundColor: "#B23A3A" },
   releaseBtn: { backgroundColor: "#2E7D5C" },
-  secondaryBtn: { backgroundColor: "#2E5BFF" },
   btnDisabled: { opacity: 0.6 },
   btnText: { color: "#fff", fontWeight: "700" },
 });

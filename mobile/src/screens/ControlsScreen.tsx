@@ -151,7 +151,7 @@ export default function ControlsScreen()
       <View style={styles.card}>
         <View style={styles.switchRow}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.label}>Monitor-only mode</Text>
+            <Text style={styles.sectionTitle}>Monitor-only mode</Text>
           <Text style={styles.note}>{backendModeText}</Text>
           {thresholdText}
           </View>
@@ -181,20 +181,18 @@ export default function ControlsScreen()
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, padding: 16, backgroundColor: "#0B1220" },
-  title: { color: "#fff", fontSize: 22, fontWeight: "800", marginBottom: 6 },
-  card: { backgroundColor: "#111B2E", borderRadius: 16, padding: 14, borderWidth: 1, borderColor: "#1D2B44", gap: 10 },
+  root: { flex: 1, padding: 16, backgroundColor: "#c4c4cc" },
+  card: { backgroundColor: "#fff", borderRadius: 16, padding: 14, borderWidth: 1, borderColor: "#fff", gap: 10 },
   switchRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12 },
-  label: { color: "#8FA0B5" },
-  note: { color: "#8FA0B5", marginTop: 4, lineHeight: 18, fontSize: 12 },
-  sectionTitle: { color: "#fff", fontWeight: "800", fontSize: 15 },
-  empty: { color: "#8FA0B5" },
-  row: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "#0F1A2F", borderRadius: 12, padding: 12, borderWidth: 1, borderColor: "#1D2B44" },
-  deviceName: { color: "#fff", fontWeight: "700" },
-  meta: { color: "#8FA0B5", marginTop: 2 },
+  note: { color: "#0c0d0e", marginTop: 6, lineHeight: 20, fontSize: 15},
+  sectionTitle: { color: "#0c0d0e", fontWeight: "800", fontSize: 15 },
+  empty: { color: "#0c0d0e" },
+  row: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "#fff", borderRadius: 12, padding: 12, borderWidth: 1, borderColor: "#1D2B44" },
+  deviceName: { color: "#0c0d0e", fontWeight: "700" },
+  meta: { color: "#0c0d0e", marginTop: 2 },
   error: { color: "#FF6B6B" },
-  historyItem: { backgroundColor: "#0F1A2F", borderRadius: 12, padding: 12, borderWidth: 1, borderColor: "#1D2B44" },
-  historyAction: { color: "#fff", fontWeight: "800", marginBottom: 4 },
-  historyMeta: { color: "#8FA0B5", lineHeight: 18 },
+  historyItem: { backgroundColor: "#fff", borderRadius: 12, padding: 12, borderWidth: 1, borderColor: "#1D2B44" },
+  historyAction: { color: "#0c0d0e", fontWeight: "800", marginBottom: 4 },
+  historyMeta: { color: "#0c0d0e", lineHeight: 18 },
   scrollContent: { paddingBottom: 24, gap: 12 },
 });

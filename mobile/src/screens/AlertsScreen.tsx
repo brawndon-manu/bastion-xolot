@@ -69,7 +69,7 @@ export default function AlertsScreen({ navigation }: Props)
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, padding: 16, backgroundColor: "#0B1220" },
-  empty: { color: "#8FA0B5", marginTop: 20 },
+  root: { flex: 1, padding: 16, backgroundColor: "#c4c4cc" },
+  empty: { color: "#0c0d0e", marginTop: 20 },
   error: { color: "#FF6B6B", marginBottom: 12 }
 });
