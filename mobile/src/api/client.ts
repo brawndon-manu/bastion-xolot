@@ -38,7 +38,7 @@ export type Alert = {
   timestamp: string;
   type: string;
   confidence: number | null;
-  sourceLabel: "Behavioral" | "IDS" | "Correlated" | "DNS" | "Connection" | "General";
+  sourceLabel: "Behavioral" | "IDS" | "Correlated" | "DNS" | "Suspicious Connection" | "General";
   status: string;
   updatedAt: string;
   resolvedAt: string | null;
@@ -120,7 +120,6 @@ function toIso(millisecs: number)
 }
 
 const API_PORT = 3000;
-const IOS_DEV_HOST = "192.168.1.50"; // CHANGE LATER
 
 /** 
 * android for windows testing
@@ -134,7 +133,7 @@ function getHost()
     return "10.0.2.2";
   }
 
-  return IOS_DEV_HOST;
+  return "localhost";
 }
 
 function baseUrl() 
@@ -228,7 +227,7 @@ function mapSeverity(severity: string): "Low" | "Medium" | "High"
   return "Medium";
 }
 
-function mapSourceLabel(type: string): "Behavioral" | "IDS" | "Correlated" | "DNS" | "Connection" | "General" 
+function mapSourceLabel(type: string): "Behavioral" | "IDS" | "Correlated" | "DNS" | "Suspicious Connection" | "General" 
 {
   if (type === "behavioral_anomaly") 
   {
@@ -248,7 +247,7 @@ function mapSourceLabel(type: string): "Behavioral" | "IDS" | "Correlated" | "DN
   }
   if (type === "suspicious_connection")
   { 
-    return "Connection";
+    return "Suspicious Connection";
   }
 
   return "General";
@@ -256,6 +255,36 @@ function mapSourceLabel(type: string): "Behavioral" | "IDS" | "Correlated" | "DN
 /*
 * convert backend eveidence into string array for displaying
 */
+
+const evidenceLabelMap: { [key: string]: string } = {
+  device_id: "Device ID",
+  ip: "IP Address",
+  ip_address: "IP Address",
+  mac_address: "MAC Address",
+  hostname: "Hostname",
+  type: "Event Type",
+  domain: "Domain",
+  destination: "Destination",
+  dest_ip: "Destination IP",
+  timestamp: "Timestamp",
+  signature: "IDS Signature",
+  category: "Category",
+  flow_count: "Flow Count",
+  total_bytes: "Total Bytes",
+  unique_destinations: "Unique Destinations",
+  risk_score: "Risk Score",
+  status: "Status",
+  reason: "Reason",
+  severity: "Severity",
+  confidence: "Confidence",
+  summary: "Summary",
+  created_at: "Created At",
+  updated_at: "Updated At",
+  resolved_at: "Resolved At",
+  event: "Event",
+  anomalies: "Anomalies",
+  ids_context: "IDS Context"
+};
 
 function mapEvidence(evidence: string | null): string[] 
 {
@@ -280,40 +309,38 @@ function mapEvidence(evidence: string | null): string[]
       return result;
     }
 
-    if (typeof parsed === "object")
+    if (parsed && typeof parsed === "object")
     {
       let result: string[] = [];
 
       for (let key in parsed)
       {
-        let label = key;
-
-      if (key === "device_id") 
-      {
-        label = "Device ID";
-      }
-      else if (key === "ip") 
-      {
-        label = "IP Address";
-      }
-      else if (key === "hostname") 
-      {
-        label = "Hostname";
-      }
-      else if (key === "type") 
-      {
-        label = "Event Type";
-      }
-
-        result.push(label + ": " + String(parsed[key]));
-      }
       
+      let label = evidenceLabelMap[key] || key;
+
+      let value = parsed[key];
+
+      if (Array.isArray(value))
+      {
+        result.push(label + ": " + value.length + " item(s)");
+      }
+      else if (typeof value === "object" && value !== null)
+      {
+        result.push(label + ": details available");
+      }
+      else
+      {
+        result.push(label + ": " + String(value));
+      }
+
+      }
       return result;
     }
-
+  
     return [String(parsed)];
-
-  } catch (error) {
+  } 
+  catch (error) 
+  {
     return [evidence];
   }
 }
@@ -400,7 +427,7 @@ async function httpGet<T>(path: string): Promise<T>
     try {
       text = await res.text();
     } 
-    catch (error) {
+    catch {
       text = "";
     }
 
@@ -449,7 +476,7 @@ async function httpPost<T>(path: string, body?: unknown): Promise<T>
     try {
       text = await res.text();
     } 
-    catch (error) {
+    catch {
       text = "";
     }
 
@@ -627,8 +654,7 @@ export const api = {
         return;
       }
 
-      if (
-        (parsedMessage.event === "device.quarantined" || parsedMessage.event === "device.released" || parsedMessage.event === "device.monitor_only") && parsedMessage.payload ) 
+      if ((parsedMessage.event === "device.quarantined" || parsedMessage.event === "device.released" || parsedMessage.event === "device.monitor_only") && parsedMessage.payload) 
       {
         let action = mapEnforcementAction(parsedMessage.payload as BackendEnforcementAction);
 
@@ -651,7 +677,9 @@ export const api = {
       });
     } catch (error) {
     }
-};  },
+    
+  };  
+  },
 
   disconnectRealtime: () => {
     if (ws) 

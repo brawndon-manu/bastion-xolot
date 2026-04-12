@@ -23,32 +23,25 @@ export const loadAlerts = createAsyncThunk("alerts/load", async () => {
  * alert
  */
 
+function upsertAlert(items: Alert[], incoming: Alert) {
+  const index = items.findIndex((x) => x.id === incoming.id);
+
+  if (index >= 0) {
+    items[index] = incoming;
+  } else {
+    items.unshift(incoming);
+  }
+}
+
 const alertsSlice = createSlice({
   name: "alerts",
   initialState,
   reducers: {
     alertUpsert: (state, action) => {
-      let incoming: Alert = action.payload;
-      let index = state.items.findIndex((x) => x.id === incoming.id);
-
-      if (index >= 0)
-        {
-          state.items[index] = incoming;
-        } 
-        else 
-        {
-          state.items.unshift(incoming);
-        }
+    upsertAlert(state.items, action.payload);
       },
       alertResolved: (state, action) => {
-      let incoming: Alert = action.payload;
-      let index = state.items.findIndex((x) => x.id === incoming.id);
-
-      if (index >= 0) {
-        state.items[index] = incoming;
-      } else {
-        state.items.unshift(incoming);
-      }
+    upsertAlert(state.items, action.payload);
     }
   },
   extraReducers: (builder) => {
@@ -69,8 +62,7 @@ const alertsSlice = createSlice({
 
 export const { alertUpsert, alertResolved } = alertsSlice.actions;
 
-export const selectAlertById = (state: RootState, id: string) =>
-{
+export const selectAlertById = (state: RootState, id: string) => {
   return state.alerts.items.find((a) => a.id === id);
 };
 

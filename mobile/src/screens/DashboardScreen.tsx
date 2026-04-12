@@ -145,7 +145,7 @@ export default function DashboardScreen()
   let systemIconColor = "#FF4D4D";
   let systemTitleColor = "#FF4D4D";
   let systemTitleText = "SYSTEM OFFLINE";
-  let systemSubText = "Network monitoring is offline";
+  let systemSubText = "Network monitoring is offline.";
 
   if (systemState === "online") 
   {
@@ -161,7 +161,7 @@ export default function DashboardScreen()
     systemIconColor = "#FFD166";
     systemTitleColor = "#FFD166";
     systemTitleText = "SYSTEM DEGRADED";
-    systemSubText = "Monitoring may be limited";
+    systemSubText = "Monitoring may be limited.";
   }
 
   return (
@@ -179,12 +179,11 @@ export default function DashboardScreen()
         />
       }
     >
-      <Text style={styles.sectionTitle}>System Dashboard</Text>
       <View style={styles.systemCard}>
         <View style={styles.systemRow}>
         <Icon
           name={systemIconName}
-          size={24}
+          size={28}
           color={systemIconColor}
         />
       <Text
@@ -217,16 +216,16 @@ export default function DashboardScreen()
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#f8f8fa" },
+  root: { flex: 1, backgroundColor: "#c4c4cc" },
   contentContainer: { padding: 16, paddingBottom: 28 },
   sectionTitle: { color: "#fff", fontSize: 16, fontWeight: "800", marginTop: 10, marginBottom: 12 },
-  systemCard: { backgroundColor: "#0a0a0a", borderRadius: 22, paddingHorizontal: 18, paddingVertical: 22, borderWidth: 1, borderColor: "#1D2B44", marginBottom: 22 },
-  systemRow: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 10 },
-  systemOnline: { fontSize: 22, fontWeight: "900" },
-  systemSub: { color: "#fff", opacity: 0.9, fontSize: 14 },
-  systemMeta: { color: "#8FA0B5", marginTop: 8, fontSize: 12 },
+  systemCard: { backgroundColor: "#fff", borderRadius: 22, paddingHorizontal: 20, paddingVertical: 28, borderWidth: 1, borderColor: "#fff", marginBottom: 22 },
+  systemRow: { flexDirection: "row", alignItems: "center", gap: 14, marginBottom: 10 },
+  systemOnline: { fontSize: 26, fontWeight: "900" },
+  systemSub: { color: "#0c0d0e", opacity: 0.9, fontSize: 16 },
+  systemMeta: { color: "#0c0d0e", marginTop: 8, fontSize: 12 },
   metricsRow: { flexDirection: "row", gap: 10, marginBottom: 12 },
-  metricCard: { flex: 1, backgroundColor: "#0a0a0a", borderRadius: 16, padding: 14,  borderWidth: 1, borderColor: "#1D2B44", alignItems: "center" },
-  metricValue: { color: "#fff", fontSize: 22, fontWeight: "900" },
-  metricLabel: { color: "#8FA0B5", marginTop: 6, fontSize: 12, fontWeight: "700" },
+  metricCard: { flex: 1, backgroundColor: "#fff", borderRadius: 16, padding: 14,  borderWidth: 1, borderColor: "#fff", alignItems: "center" },
+  metricValue: { color: "#0c0d0e", fontSize: 22, fontWeight: "900" },
+  metricLabel: { color: "#0c0d0e", marginTop: 6, fontSize: 12, fontWeight: "700" },
 });

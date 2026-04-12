@@ -59,11 +59,11 @@ export default function OnboardingScreen()
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, padding: 20, backgroundColor: "#0c0d0e", justifyContent: "center" },
-  subtitle: { color: "#B7C0CC", fontSize: 16, marginBottom: 18, lineHeight: 22 },
-  card: { backgroundColor: "#111B2E", borderRadius: 16, padding: 16, borderWidth: 1, borderColor: "#1D2B44" },
-  label: { color: "#B7C0CC", marginBottom: 8, fontSize: 14 },
-  input: { backgroundColor: "#0B1220", borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, color: "#fff", borderWidth: 1, borderColor: "#223556" },
+  root: { flex: 1, padding: 20, backgroundColor: "#c4c4cc", justifyContent: "center" },
+  subtitle: { color: "#0c0d0e", fontSize: 16, marginBottom: 18, lineHeight: 22 },
+  card: { backgroundColor: "#fff", borderRadius: 16, padding: 16, borderWidth: 1, borderColor: "#fff" },
+  label: { color: "#0c0d0e", marginBottom: 8, fontSize: 14 },
+  input: { backgroundColor: "#fff", borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, color: "#070707", borderWidth: 1, borderColor: "#223556" },
   button: { marginTop: 14, backgroundColor: "#2E5BFF", borderRadius: 12, paddingVertical: 12, alignItems: "center" },
   buttonText: { color: "#fff", fontWeight: "700" },
   error: { marginTop: 10, color: "#FF6B6B" },

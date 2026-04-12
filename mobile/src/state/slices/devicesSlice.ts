@@ -55,8 +55,7 @@ const devicesSlice = createSlice({
 
 export const { deviceSeen } = devicesSlice.actions;
 
-export const selectDeviceById = (state: RootState, id: string) =>
-{
+export const selectDeviceById = (state: RootState, id: string) => {
   return state.devices.items.find((d) => d.id === id);
 };
 

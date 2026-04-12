@@ -15,7 +15,7 @@ import AlertsScreen from "./screens/AlertsScreen";
 import AlertDetailScreen from "./screens/AlertDetailScreen";
 import SettingsScreen from "./screens/SettingsScreen";
 import ControlsScreen from "./screens/ControlsScreen";
-
+import { View, Text } from "react-native";
 
 export type MainTabParamList = {
   Dashboard: undefined;
@@ -37,19 +37,21 @@ const Tabs = createBottomTabNavigator<MainTabParamList>();
 
 /**
  * Main tab navigation shell
- * Resonsible for defining top level authenticated navigation, 
- * assigining icons and labels for each tab, 
- * applying shared tab styling 
+ * Resonsible for authenticated top level navigation, 
+ * tab icons, labels and shared tab styling 
 */
+
 function MainTabs() 
 {
   return (
     <Tabs.Navigator
       screenOptions={{
-        headerStyle: { backgroundColor: "#0c0d0e" },
-        headerTintColor: "#fff",
+        headerStyle: { backgroundColor: "#c4c4cc" },
+        headerTintColor: "#070707",
         headerTitleAlign: "center",
-        tabBarStyle: { backgroundColor: "#0c0d0e", borderTopColor: "#1D2B44", height: 64, paddingBottom: 10, paddingTop: 8 },
+        headerShadowVisible: false,
+        headerTitleStyle: {fontSize: 25, fontWeight: "800"},
+        tabBarStyle: { backgroundColor: "#f8f8fc", borderTopColor: "#1D2B44", height: 78, paddingBottom: 12, paddingTop: 6 },
         tabBarActiveTintColor: "#18E36B",
         tabBarInactiveTintColor: "#8FA0B5",
         tabBarLabelStyle: { fontSize: 12, fontWeight: "700" }
@@ -60,7 +62,16 @@ function MainTabs()
         component={DashboardScreen}
         options={{
           title: "Dashboard",
-          headerTitle: "Bastión Xólot",
+          headerTitle: () => (
+            <View style={{ alignItems: "center" }}>
+              <Text style={{ fontSize: 24, fontWeight: "900", color: "#070707" }}>
+                Bastión Xólot
+              </Text>
+              <Text style={{ fontSize: 16, color: "#555" }}>
+                System Dashboard
+              </Text>
+            </View>
+          ),
           tabBarLabel: "Dashboard",
           tabBarIcon: ({ focused }) => ( 
           <Icon name = "home" size={20} color={focused ? "#18E36B" : "#8FA0B5"} />
@@ -119,16 +130,18 @@ function AppInner()
   {
     return (
       <NavigationContainer>
-        <StatusBar barStyle="light-content" />
+        <StatusBar barStyle="dark-content" />
         <Stack.Navigator
           screenOptions={{
-            headerStyle: { backgroundColor: "#0c0d0e" },
-            headerTintColor: "#fff",
+            headerStyle: { backgroundColor: "#c4c4cc" },
+            headerTintColor: "#0c0d0e",
             contentStyle: { backgroundColor: "#0c0d0e" },
-            headerTitleAlign: "center"
+            headerTitleAlign: "center",
+            headerShadowVisible: false,
+            headerTitleStyle: { fontSize: 25, fontWeight: "800" }
           }}
         >
-            <Stack.Screen name="Onboarding" component={OnboardingScreen} options={{ title: "BASTIÓN XÓLOT" }} />
+            <Stack.Screen name="Onboarding" component={OnboardingScreen} options={{ title: "Bastión Xólot" }} />
         </Stack.Navigator>
       </NavigationContainer>
     );
@@ -136,13 +149,15 @@ function AppInner()
 
   return (
         <NavigationContainer>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle="dark-content" />
       <Stack.Navigator
         screenOptions={{
-          headerStyle: { backgroundColor: "#0c0d0e" },
-          headerTintColor: "#fff",
+          headerStyle: { backgroundColor: "#c4c4cc" },
+          headerTitleStyle: { fontSize: 25, fontWeight: "800" },
+          headerTintColor: "#070707",
           contentStyle: { backgroundColor: "#0c0d0e" },
-          headerTitleAlign: "center"
+          headerTitleAlign: "center",
+          headerShadowVisible: false
         }}
       >
         <Stack.Screen
@@ -153,7 +168,7 @@ function AppInner()
         <Stack.Screen
           name="DeviceDetail"
           component={DeviceDetailScreen}
-          options={{ title: "Device" }}
+          options={{ title: "Device Details" }}
         />
         <Stack.Screen
           name="AlertDetail"
