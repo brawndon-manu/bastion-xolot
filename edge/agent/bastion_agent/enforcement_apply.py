@@ -1,20 +1,19 @@
 from __future__ import annotations
 
-import re
+import os
 import subprocess
 from typing import Literal
 
-# Op is a TYPE alias: op can only be one of these 4 string values
-Op = Literal["ADD_SOFT", "DEL_SOFT", "ADD_HARD", "DEL_HARD"]
+from bastion_agent.utils import normalize_mac, is_valid_mac
 
-_MAC_RE = re.compile(r"^[0-9a-f]{2}(:[0-9a-f]{2}){5}$")
+Op = Literal["ADD_SOFT", "DEL_SOFT", "ADD_HARD", "DEL_HARD"]
 
 
 def _validate_mac(mac: str) -> str:
-    m = mac.strip().lower()
-    if not _MAC_RE.match(m): # prevents running nft with bad input
+    m = normalize_mac(mac)
+    if not is_valid_mac(m):
         raise ValueError(f"invalid mac: {mac}")
-    return m  # return normalized validated MAC
+    return m
 
 
 def build_nft_command(op: Op, mac: str) -> list[str]:
@@ -42,37 +41,17 @@ def run_command(argv: list[str]) -> None:
 
     Idempotency rules:
     - Deleting an element that does not exist is treated as success.
-    - Adding an element that already exists is treated as success. (nice-to-have)
-    """
-import os
-
-def run_command(argv: list[str]) -> None:
-    """
-    Execute the command safely.
-
-    Idempotency rules:
-    - Deleting an element that does not exist is treated as success.
     - Adding an element that already exists is treated as success.
     """
+    cmd = argv if os.geteuid() == 0 else ["sudo", *argv]
 
-    # Only use sudo if not already root
-    if os.geteuid() == 0:
-        cmd = argv
-    else:
-        cmd = ["sudo", *argv]
-
-    proc = subprocess.run(
-        cmd,
-        text=True,
-        capture_output=True,
-    )
+    proc = subprocess.run(cmd, text=True, capture_output=True)
 
     if proc.returncode == 0:
         return
 
     stderr = (proc.stderr or "").lower()
 
-    # Narrowly whitelist expected idempotent nft errors
     is_delete_element = ("delete" in argv) and ("element" in argv)
     is_add_element = ("add" in argv) and ("element" in argv)
 
@@ -82,13 +61,13 @@ def run_command(argv: list[str]) -> None:
     if is_add_element and "element already exists" in stderr:
         return
 
-    # Otherwise: real failure
     raise subprocess.CalledProcessError(
         proc.returncode,
         proc.args,
         output=proc.stdout,
         stderr=proc.stderr,
     )
+
 
 def apply_ops(ops: list[dict[str, str]], *, execute: bool) -> list[list[str]]:
     """
@@ -104,7 +83,6 @@ def apply_ops(ops: list[dict[str, str]], *, execute: bool) -> list[list[str]]:
         op = item.get("op")
         mac = item.get("mac")
 
-        # important validation of types
         if not isinstance(op, str) or not isinstance(mac, str):
             raise ValueError(f"invalid op entry: {item}")
 
@@ -112,7 +90,6 @@ def apply_ops(ops: list[dict[str, str]], *, execute: bool) -> list[list[str]]:
         commands.append(argv)
 
         if execute:
-            # raises CalledProcessError on failure
             run_command(argv)
 
     return commands
