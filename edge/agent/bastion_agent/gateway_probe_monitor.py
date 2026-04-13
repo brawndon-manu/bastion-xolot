@@ -25,6 +25,8 @@ import re
 import subprocess
 from typing import Any
 
+from bastion_agent.config import GATEWAY_IP
+
 logger = logging.getLogger(__name__)
 
 _PREFIX = "BASTION_GW_TCP_NEW"
@@ -195,7 +197,7 @@ def gateway_probe_summary_to_signal(summary: dict[str, Any]) -> dict[str, Any] |
     attempts = int(summary.get("attempt_count", 0) or 0)
     ports = list(summary.get("dst_ports", []))
 
-    if dst_ip != "192.168.50.1":
+    if dst_ip != GATEWAY_IP:
         return None
 
     if not src_mac:

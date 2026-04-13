@@ -52,6 +52,10 @@ LAN_IFACE = os.getenv("BASTION_LAN_IFACE", "CHANGE ME")
 # Interface facing the modem / internet
 WAN_IFACE = os.getenv("BASTION_WAN_IFACE", "CHANGE ME")
 
+# IP address of the local gateway (router)
+# Used by anomaly detection and gateway probe monitor to identify gateway-directed traffic
+GATEWAY_IP = os.getenv("BASTION_GATEWAY_IP", "192.168.50.1")
+
 
 # ═══════════════════════════════════════════
 # Backend connection (set by Backend Engineer)

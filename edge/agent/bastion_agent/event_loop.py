@@ -7,6 +7,7 @@ import subprocess
 from datetime import datetime
 from typing import Dict, Any
 from collections import defaultdict
+from bastion_agent import state
 from bastion_agent.detection import handle_event
 from bastion_agent.suricata_adapter import parse_eve_log
 from bastion_agent.device_registry import update_device
@@ -19,8 +20,6 @@ TEST_MACS = [
 ]
 
 SEVERITIES = ["low", "medium", "high"]
-
-STATE_FILE = "/var/lib/bastion/enforcement/desired_state.json"
 
 
 # ANSI Colors
@@ -47,12 +46,7 @@ def generate_event() -> Dict[str, Any]:
     }
 
 def read_current_state(mac: str) -> str | None:
-    try:
-        with open(STATE_FILE, "r") as f:
-            data = json.load(f)
-        return data.get("devices", {}).get(mac, {}).get("state")
-    except Exception:
-        return None
+    return state.get_device_state(mac)
 
 def get_color(severity: str) -> str:
     if severity == "HIGH":
@@ -150,9 +144,7 @@ def print_dashboard():
 
     # Count current state
     try:
-        with open(STATE_FILE, "r") as f:
-            data = json.load(f)
-        devices = data.get("devices", {})
+        devices = state.load_desired_state().get("devices", {})
         hard = sum(1 for d in devices.values() if d.get("state") == "HARD")
         soft = sum(1 for d in devices.values() if d.get("state") == "SOFT")
     except Exception:
