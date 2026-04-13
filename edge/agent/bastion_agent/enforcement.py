@@ -31,18 +31,14 @@ from typing import Any, Literal, Optional
 from bastion_agent import audit
 from bastion_agent.config import MONITOR_ONLY, DRY_RUN, ALLOW_ENFORCEMENT
 from bastion_agent import state
-
 from bastion_agent.config import enforcement_allowed
-from bastion_agent import enforcement_apply
+from bastion_agent import enforcement_runtime
+from bastion_agent.enforcement_plan import plan_ops
+from bastion_agent.utils import normalize_mac
 
 
 EnfState = Literal["NONE", "SOFT", "HARD"]
 ResultStatus = Literal["NOOP", "PLANNED_ONLY", "EXECUTED", "FAILED"]
-Op = Literal["ADD_SOFT", "DEL_SOFT", "ADD_HARD", "DEL_HARD"]
-
-
-def _normalize_mac(mac: str) -> str:
-    return mac.strip().lower()
 
 
 def _gates_snapshot() -> dict[str, bool]:
@@ -57,38 +53,6 @@ def _gates_snapshot() -> dict[str, bool]:
         "dry_run": bool(DRY_RUN),
         "allow_enforcement": bool(ALLOW_ENFORCEMENT),
     }
-
-
-def _plan_ops(
-    mac: str, from_state: EnfState, to_state: EnfState
-) -> list[dict[str, str]]:
-    """
-    Compute nft set membership operations needed for a state transition.
-
-    IMPORTANT:
-    - Set-level planning only — no chain edits, no base table changes.
-    - Transitions are explicit and minimal.
-    - A NONE → NONE transition produces zero ops (no-op).
-    """
-    mac = _normalize_mac(mac)
-    ops: list[dict[str, str]] = []
-
-    if from_state == to_state:
-        return ops
-
-    # Remove from prior state set if applicable
-    if from_state == "SOFT":
-        ops.append({"op": "DEL_SOFT", "mac": mac})
-    elif from_state == "HARD":
-        ops.append({"op": "DEL_HARD", "mac": mac})
-
-    # Add to target state set if applicable
-    if to_state == "SOFT":
-        ops.append({"op": "ADD_SOFT", "mac": mac})
-    elif to_state == "HARD":
-        ops.append({"op": "ADD_HARD", "mac": mac})
-
-    return ops
 
 
 def plan_transition(
@@ -108,9 +72,9 @@ def plan_transition(
     Separating planning from execution means we can inspect, test, and log
     the plan independently of whether it runs.
     """
-    mac_norm = _normalize_mac(mac)
+    mac_norm = normalize_mac(mac)
     gates = _gates_snapshot()
-    ops = _plan_ops(mac_norm, from_state, to_state)
+    ops = plan_ops(mac_norm, from_state, to_state)
 
     # tx is transaction which represents: One requested state change for one device
     tx: dict[str, Any] = {
@@ -197,12 +161,7 @@ def request_transition(
 
     # Gates open and ops exist → execute
     else:
-        try:
-            enforcement_apply.apply_ops(ops, execute=True)
-            tx["result"]["status"] = "EXECUTED"
-        except Exception as exc:
-            tx["result"]["status"] = "FAILED"
-            tx["result"]["error"] = str(exc)
+        tx["result"].update(enforcement_runtime.execute_ops(ops))
 
     tx_id = audit.append_tx(tx)
     tx["tx_id"] = tx_id

@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from typing import Dict, List
 
-from bastion_agent import state, audit, enforcement_apply
+from bastion_agent import state, audit, enforcement_runtime
 from bastion_agent.config import enforcement_allowed
+from bastion_agent.enforcement_plan import plan_ops
 from bastion_agent.nft_state import get_quarantine_membership
 
 
@@ -39,17 +40,15 @@ def _diff_ops(desired: Dict[str, set[str]], actual: Dict[str, set[str]]) -> List
     """
     ops: List[dict] = []
 
-    # HARD set
     for mac in desired["HARD"] - actual["HARD"]:
-        ops.append({"op": "ADD_HARD", "mac": mac})
+        ops.extend(plan_ops(mac, "NONE", "HARD"))
     for mac in actual["HARD"] - desired["HARD"]:
-        ops.append({"op": "DEL_HARD", "mac": mac})
+        ops.extend(plan_ops(mac, "HARD", "NONE"))
 
-    # SOFT set
     for mac in desired["SOFT"] - actual["SOFT"]:
-        ops.append({"op": "ADD_SOFT", "mac": mac})
+        ops.extend(plan_ops(mac, "NONE", "SOFT"))
     for mac in actual["SOFT"] - desired["SOFT"]:
-        ops.append({"op": "DEL_SOFT", "mac": mac})
+        ops.extend(plan_ops(mac, "SOFT", "NONE"))
 
     return ops
 
@@ -96,12 +95,7 @@ def reconcile_once() -> dict:
         tx["result"]["status"] = "PLANNED_ONLY"
 
     else:
-        try:
-            enforcement_apply.apply_ops(ops, execute=True)
-            tx["result"]["status"] = "EXECUTED"
-        except Exception as exc:
-            tx["result"]["status"] = "FAILED"
-            tx["result"]["error"] = str(exc)
+        tx["result"].update(enforcement_runtime.execute_ops(ops))
 
     tx_id = audit.append_tx(tx)
     tx["tx_id"] = tx_id
