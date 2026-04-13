@@ -24,3 +24,6 @@ data/
 # Python bytecode
 *.pyc
 __pycache__/
+
+# Claude Code internals
+.claude/worktrees/
