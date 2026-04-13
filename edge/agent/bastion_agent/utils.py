@@ -16,6 +16,11 @@ logger = logging.getLogger(__name__)
 _MAC_RE = re.compile(r"^([0-9a-fA-F]{2}[:\-]){5}[0-9a-fA-F]{2}$")
 
 
+def utcnow() -> datetime:
+    """Return current UTC time as a timezone-aware datetime object."""
+    return datetime.now(timezone.utc)
+
+
 def utcnow_iso() -> str:
     """Return current UTC time as ISO-8601 string."""
     return datetime.now(timezone.utc).isoformat()

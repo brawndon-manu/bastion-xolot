@@ -34,6 +34,7 @@ Satisfies Requirement 1.6:
 import json
 import logging
 from datetime import datetime, timezone
+from bastion_agent.config import GATEWAY_IP
 from bastion_agent.detection import handle_event
 
 from bastion_agent.baseline import get_baseline, is_baseline_stable
@@ -441,7 +442,7 @@ def _is_benign_gateway_service_mix(top_dest: str | None, top_ports: list[int]) -
     if not top_dest:
         return False
 
-    if top_dest != "192.168.50.1":
+    if top_dest != GATEWAY_IP:
         return False
 
     try:

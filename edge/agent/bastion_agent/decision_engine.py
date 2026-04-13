@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from collections import defaultdict, deque
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from typing import Deque, Dict, Any
+
+from bastion_agent.utils import utcnow
 
 
 SCORE_MONITOR_MAX = 39
@@ -25,12 +27,8 @@ WINDOW_SECONDS = 300  # 5 minutes
 _SIGNAL_HISTORY: Dict[str, Deque[dict]] = defaultdict(deque)
 
 
-def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
-
-
 def _prune_old(device_id: str) -> None:
-    cutoff = _utcnow() - timedelta(seconds=WINDOW_SECONDS)
+    cutoff = utcnow() - timedelta(seconds=WINDOW_SECONDS)
     history = _SIGNAL_HISTORY[device_id]
 
     while history and history[0]["ts"] < cutoff:
@@ -75,7 +73,7 @@ def record_signal(event: Dict[str, Any]) -> int:
     )
 
     history.append({
-        "ts": _utcnow(),
+        "ts": utcnow(),
         "source": source,
         "severity": severity,
         "base_score": base_score,

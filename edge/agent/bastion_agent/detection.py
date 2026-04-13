@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Dict, Any
-from bastion_agent import enforcement
+from bastion_agent import enforcement, state
 from bastion_agent.config import PROTECTED_MACS
 from bastion_agent.decision_engine import record_signal, action_tier
+from bastion_agent.utils import utcnow
 
-
-STATE_FILE = "/var/lib/bastion/enforcement/desired_state.json"
 
 SOFT_COOLDOWN_SECONDS = 300
 HARD_COOLDOWN_SECONDS = 600
@@ -17,25 +15,12 @@ HARD_COOLDOWN_SECONDS = 600
 _COOLDOWNS: dict[str, datetime] = {}
 
 
-def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def _read_current_state(device_id: str) -> str | None:
-    try:
-        with open(STATE_FILE, "r") as f:
-            data = json.load(f)
-        return data.get("devices", {}).get(device_id, {}).get("state")
-    except Exception:
-        return None
-
-
 def _cooldown_active(device_id: str) -> bool:
     expiry = _COOLDOWNS.get(device_id)
     if not expiry:
         return False
 
-    if _utcnow() >= expiry:
+    if utcnow() >= expiry:
         del _COOLDOWNS[device_id]
         return False
 
@@ -43,7 +28,7 @@ def _cooldown_active(device_id: str) -> bool:
 
 
 def _set_cooldown(device_id: str, seconds: int) -> None:
-    _COOLDOWNS[device_id] = _utcnow() + timedelta(seconds=seconds)
+    _COOLDOWNS[device_id] = utcnow() + timedelta(seconds=seconds)
 
 
 def _decision_block(
@@ -118,7 +103,7 @@ def handle_event(event: Dict[str, Any]) -> dict:
             ),
         }
 
-    current_state = _read_current_state(device_id)
+    current_state = state.get_device_state(device_id)
 
     # ACTION GATES (Phase 8 R4)
     if tier == "hard_quarantine" and current_state == "HARD":
