@@ -1,7 +1,10 @@
 import { Platform } from "react-native";
+
 /**
-* API client for app
-*/
+ * API client for app
+ * Handles REST requests
+ * Websocket connection and event normalization
+ */
 
 type Listener = (event: any) => void;
 
@@ -11,10 +14,9 @@ let memoryToken: string | null = null;
 
 export type PairResult = { token: string };
 
-/*
-* frontend types used by mobile screens / components
-*/
-
+/**
+ * Frontend types used by the mobile UI
+ */
 export type Device = {
   id: string;
   name: string;
@@ -45,9 +47,8 @@ export type Alert = {
 };
 
 /**
-* PHASE 4: enforcement actions for quarantine / release 
-*/
-
+ * Enforcment action shape used by controls/history screens
+ */
 export type EnforcementAction = {
   id: string;
   deviceId: string;
@@ -71,10 +72,9 @@ export type HealthStatus = {
   time: string;
 };
 
-/*
-* backend response types
-*/
-
+/**
+ * Raw backend device response types
+ */
 type BackendDevice = {
   id: string;
   mac_address: string | null;
@@ -121,11 +121,6 @@ function toIso(millisecs: number)
 
 const API_PORT = 3000;
 
-/** 
-* android for windows testing
-* ios final 
-*/
-
 function getHost() 
 {
   if (Platform.OS === "android") 
@@ -136,22 +131,25 @@ function getHost()
   return "localhost";
 }
 
+/**
+ * Base HTTP URL for REST calls
+ */
 function baseUrl() 
 {
   return `http://${getHost()}:${API_PORT}`;
 }
 
+/**
+ * Base Websocket URL for realtime updates
+ */
 function wsUrl() 
 {
   return `ws://${getHost()}:${API_PORT}`;
 }
 
 /**
-* 
-* PHASE 1: device inventory
-* PHASE 3: riskscore, devicestatus
-*/
-
+ * Maps backend device record into the frontend device shape
+ */
 function mapDevice(device: BackendDevice): Device 
 {
   let ip = device.ip_address;
@@ -207,9 +205,8 @@ function mapDevice(device: BackendDevice): Device
 }
 
 /**
-* convverts backend severity strings
-*/
-
+ * Normalizes backend severity strings for UI
+ */
 function mapSeverity(severity: string): "Low" | "Medium" | "High" 
 {
   const lowerSeverity = severity.toLowerCase();
@@ -227,6 +224,9 @@ function mapSeverity(severity: string): "Low" | "Medium" | "High"
   return "Medium";
 }
 
+/**
+ * Maps backend alert type values into cleaner sourcer labels for UI
+ */
 function mapSourceLabel(type: string): "Behavioral" | "IDS" | "Correlated" | "DNS" | "Suspicious Connection" | "General" 
 {
   if (type === "behavioral_anomaly") 
@@ -252,10 +252,10 @@ function mapSourceLabel(type: string): "Behavioral" | "IDS" | "Correlated" | "DN
 
   return "General";
 }
-/*
-* convert backend eveidence into string array for displaying
-*/
 
+/**
+ * Converts backend evidence keys into labels for displaying
+ */
 const evidenceLabelMap: { [key: string]: string } = {
   device_id: "Device ID",
   ip: "IP Address",
@@ -286,6 +286,9 @@ const evidenceLabelMap: { [key: string]: string } = {
   ids_context: "IDS Context"
 };
 
+/**
+ * Converts raw backend evidence into array of readable strings for display
+ */
 function mapEvidence(evidence: string | null): string[] 
 {
   
@@ -345,10 +348,9 @@ function mapEvidence(evidence: string | null): string[]
   }
 }
 
-/*
-* covert backend alert into frontend alert
-*/
-
+/**
+ * Maps backend alert into frontend alert shape
+ */
 function mapAlert(alert: BackendAlert): Alert 
 {
   let deviceId = alert.device_id;
@@ -381,10 +383,9 @@ function mapAlert(alert: BackendAlert): Alert
   };
 }
 
-/*
-* convert backend enforcement action into frontend format
-*/
-
+/**
+ * Maps backend enforcement action into frontend enforcement shape
+ */
 function mapEnforcementAction(action: BackendEnforcementAction): EnforcementAction 
 {
   return {
@@ -400,11 +401,9 @@ function mapEnforcementAction(action: BackendEnforcementAction): EnforcementActi
   };
 }
 
-/*
-* GET helper
-* send GET requests, attach JSON headers & auth token
-*/
-
+/**
+ * GET helper
+ */
 async function httpGet<T>(path: string): Promise<T> 
 {
   let url = baseUrl() + path;
@@ -438,11 +437,9 @@ async function httpGet<T>(path: string): Promise<T>
   return data as T;
 }
 
-/*
-* POST helper
-* send POST requests, etc
-*/
-
+/**
+ * POST helper
+ */
 async function httpPost<T>(path: string, body?: unknown): Promise<T> 
 {
   let url = baseUrl() + path;
@@ -487,10 +484,10 @@ async function httpPost<T>(path: string, body?: unknown): Promise<T>
   return data as T;
 }
 
-/*
-* main API object used by app
-*/
-
+/**
+ * Main API object used by app
+ * Handles health checks, alerts, devices, enforcement, realtime websocket updates
+ */
 export const api = {
   // still using local PIN update later
   pair: async (pin: string): Promise<PairResult> => {
@@ -521,7 +518,7 @@ export const api = {
   },
 
   /**
-   *  devices from backend
+   * Fetches all known devices + alert by ID
    */
   getDevices: async (): Promise<Device[]> => {
     let rows = await httpGet<BackendDevice[]>("/devices");
@@ -541,9 +538,9 @@ export const api = {
     return device;
   },
 
-/*
-* alerts from backend
-*/
+  /**
+   * Fetches all alerts + alert by id
+   */
   getAlerts: async (): Promise<Alert[]> => {
     let rows = await httpGet<BackendAlert[]>("/alerts");
     let alerts: Alert[] = [];
@@ -562,16 +559,18 @@ export const api = {
     return alert;
   },
 
-/*
-* enforcement controls
-* manual quarantine / release + history
-*/
+  /**
+   * Requests manual quarantine of a device
+   */
   quarantineDevice: async (id: string, reason = "manual_quarantine"): Promise<EnforcementAction> => {
     let row = await httpPost<BackendEnforcementAction>("/enforcement/quarantine/" + id, { reason: reason, initiated_by: "operator"});
     let action = mapEnforcementAction(row);
     return action;
   },
 
+  /**
+   * Requests release of a quarantined device
+   */
   unquarantineDevice: async (id: string): Promise<EnforcementAction> => {
     let row = await httpPost<BackendEnforcementAction>("/enforcement/release/" + id, {initiated_by: "operator"});
     let action = mapEnforcementAction(row);
@@ -579,10 +578,8 @@ export const api = {
   },
 
   /**
-   *  fetches enforcement history
-   *  used by controls screen tsx
+   * Fetches enforcement history
    */
-
   getEnforcementHistory: async (): Promise<EnforcementAction[]> => {
     let rows = await httpGet<BackendEnforcementAction[]>("/enforcement/history");
     let history: EnforcementAction[] = [];
@@ -594,9 +591,9 @@ export const api = {
     return history;
   },
 
-/*
-* real time websocket connection
-*/
+/**
+ * Opens Websocket connection
+ */
   connectRealtime: () => {
     if (ws) 
     {
@@ -622,12 +619,12 @@ export const api = {
       try {
         let parsedMessage = JSON.parse(String(message.data));
 
-        if (!parsedMessage) {
+        if (!parsedMessage)
+        {
           return;
         }
 
-        if (
-          (parsedMessage.event === "alert.created" || parsedMessage.event === "alert.updated") && parsedMessage.payload) 
+        if ((parsedMessage.event === "alert.created" || parsedMessage.event === "alert.updated") && parsedMessage.payload) 
         {
           let alert = mapAlert(parsedMessage.payload as BackendAlert);
 
@@ -641,15 +638,16 @@ export const api = {
           return;
         }
 
-      if (parsedMessage.event === "alert.resolved" && parsedMessage.payload) {
+      if (parsedMessage.event === "alert.resolved" && parsedMessage.payload) 
+      {
         let alert = mapAlert(parsedMessage.payload as BackendAlert);
 
         listeners.forEach((listener) => {
           listener({
             type: "ALERT_RESOLVED",
             payload: alert
+           });
           });
-        });
 
         return;
       }
@@ -673,14 +671,16 @@ export const api = {
           type: "WS_EVENT",
           event: parsedMessage.event,
           payload: parsedMessage.payload
-        });
-      });
-    } catch (error) {
-    }
-    
-  };  
+          });
+          });
+        } catch (error) {
+        }
+     };  
   },
 
+  /**
+   * Closes the Websocket connection
+   */
   disconnectRealtime: () => {
     if (ws) 
     {
@@ -689,6 +689,9 @@ export const api = {
     ws = null;
   },
 
+  /**
+   *  Registers a realtime listener
+   */
   subscribe: (listener: Listener) => {
     listeners.push(listener);
 

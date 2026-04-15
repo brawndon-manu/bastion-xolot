@@ -6,6 +6,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { store, RootState, AppDispatch } from "./state/store";
 import { bootstrapAuth } from "./state/slices/authSlice";
+
 import Icon from "react-native-vector-icons/Feather";
 import OnboardingScreen from "./screens/OnboardingScreen";
 import DashboardScreen from "./screens/DashboardScreen";
