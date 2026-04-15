@@ -52,6 +52,36 @@ CREATE TABLE IF NOT EXISTS dns_blocks (
     timestamp    TEXT NOT NULL,
     alerted      INTEGER DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS flow_summaries (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    mac_address     TEXT NOT NULL,
+    ip_address      TEXT,
+    timestamp       TEXT NOT NULL,
+    connections     INTEGER DEFAULT 0,
+    bytes_out       INTEGER DEFAULT 0,
+    bytes_in        INTEGER DEFAULT 0,
+    unique_dests    INTEGER DEFAULT 0,
+    destinations    TEXT DEFAULT '[]',
+    ports           TEXT DEFAULT '[]',
+    protocols       TEXT DEFAULT '[]'
+);
+
+CREATE TABLE IF NOT EXISTS device_baselines (
+    mac_address         TEXT PRIMARY KEY,
+    connections_mean    REAL DEFAULT 0,
+    connections_m2      REAL DEFAULT 0,
+    bytes_out_mean      REAL DEFAULT 0,
+    bytes_out_m2        REAL DEFAULT 0,
+    unique_dests_mean   REAL DEFAULT 0,
+    unique_dests_m2     REAL DEFAULT 0,
+    known_destinations  TEXT DEFAULT '[]',
+    active_hours        TEXT DEFAULT '[]',
+    sample_count        INTEGER DEFAULT 0,
+    first_sample        TEXT,
+    last_sample         TEXT,
+    status              TEXT DEFAULT 'learning'
+);
 """
 
 
@@ -207,4 +237,106 @@ def mark_dns_blocks_alerted(row_ids: list[int]) -> None:
         f"UPDATE dns_blocks SET alerted = 1 WHERE id IN ({placeholders})",
         row_ids,
     )
+    get_conn().commit()
+
+
+# ─────────────────────────────────────────────
+# IP → MAC lookup
+# ─────────────────────────────────────────────
+
+def ip_to_mac(ip: str) -> str | None:
+    """Look up the MAC address for a known device by its IP."""
+    row = get_conn().execute(
+        "SELECT mac_address FROM known_devices WHERE ip_address = ?", (ip,)
+    ).fetchone()
+    return row["mac_address"] if row else None
+
+
+def get_all_device_ips() -> set[str]:
+    """Return the set of all known LAN device IP addresses."""
+    rows = get_conn().execute("SELECT ip_address FROM known_devices").fetchall()
+    return {row["ip_address"] for row in rows}
+
+
+# ─────────────────────────────────────────────
+# Flow summaries (Phase 3)
+# ─────────────────────────────────────────────
+
+def store_flow_summary(
+    mac: str,
+    ip: str | None,
+    connections: int,
+    bytes_out: int,
+    bytes_in: int,
+    unique_dests: int,
+    destinations: str,
+    ports: str,
+    protocols: str,
+) -> None:
+    """Persist a per-device flow summary snapshot."""
+    get_conn().execute(
+        "INSERT INTO flow_summaries "
+        "(mac_address, ip_address, timestamp, connections, bytes_out, bytes_in, "
+        "unique_dests, destinations, ports, protocols) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (mac, ip, utcnow_iso(), connections, bytes_out, bytes_in,
+         unique_dests, destinations, ports, protocols),
+    )
+    get_conn().commit()
+
+
+# ─────────────────────────────────────────────
+# Device baselines (Phase 3)
+# ─────────────────────────────────────────────
+
+def get_baseline(mac: str) -> dict | None:
+    """Retrieve the baseline profile for a device, or None."""
+    row = get_conn().execute(
+        "SELECT * FROM device_baselines WHERE mac_address = ?", (mac,)
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def upsert_baseline(mac: str, data: dict) -> None:
+    """Insert or update a device's baseline profile."""
+    existing = get_baseline(mac)
+    if existing:
+        get_conn().execute(
+            "UPDATE device_baselines SET "
+            "connections_mean=?, connections_m2=?, "
+            "bytes_out_mean=?, bytes_out_m2=?, "
+            "unique_dests_mean=?, unique_dests_m2=?, "
+            "known_destinations=?, active_hours=?, "
+            "sample_count=?, first_sample=COALESCE(first_sample, ?), "
+            "last_sample=?, status=? "
+            "WHERE mac_address=?",
+            (
+                data["connections_mean"], data["connections_m2"],
+                data["bytes_out_mean"], data["bytes_out_m2"],
+                data["unique_dests_mean"], data["unique_dests_m2"],
+                data["known_destinations"], data["active_hours"],
+                data["sample_count"], data.get("first_sample"),
+                data["last_sample"], data["status"],
+                mac,
+            ),
+        )
+    else:
+        get_conn().execute(
+            "INSERT INTO device_baselines "
+            "(mac_address, connections_mean, connections_m2, "
+            "bytes_out_mean, bytes_out_m2, "
+            "unique_dests_mean, unique_dests_m2, "
+            "known_destinations, active_hours, "
+            "sample_count, first_sample, last_sample, status) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                mac,
+                data["connections_mean"], data["connections_m2"],
+                data["bytes_out_mean"], data["bytes_out_m2"],
+                data["unique_dests_mean"], data["unique_dests_m2"],
+                data["known_destinations"], data["active_hours"],
+                data["sample_count"], data.get("first_sample"),
+                data["last_sample"], data["status"],
+            ),
+        )
     get_conn().commit()

@@ -35,11 +35,12 @@ from __future__ import annotations
 
 import json
 import os
-import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
+
+from bastion_agent.utils import utcnow_iso
 
 
 # ---------------------------------------------------------------------------
@@ -78,12 +79,6 @@ class AuditPaths:
 
 def _ensure_parent_dir(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-
-
-def _now_iso() -> str:
-    # Simple, deterministic, no external dependencies.
-    # Example: 2026-02-16T23:38:12Z
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
 # ---------------------------------------------------------------------------
@@ -130,7 +125,7 @@ def append_tx(tx: dict[str, Any], paths: AuditPaths = AuditPaths()) -> str:
     if "tx_id" not in tx or not tx["tx_id"]:
         tx["tx_id"] = str(uuid.uuid4())
     if "ts" not in tx or not tx["ts"]:
-        tx["ts"] = _now_iso()
+        tx["ts"] = utcnow_iso()
 
     _ensure_parent_dir(paths.history_path)
 

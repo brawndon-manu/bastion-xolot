@@ -1,9 +1,10 @@
 from __future__ import annotations
 import json
 import os
-import time
 from pathlib import Path
 from typing import Any, Literal, Optional
+
+from bastion_agent.utils import normalize_mac, utcnow_iso
 
 # Devices can only be in these 3 states:
 # No enforcement
@@ -22,20 +23,6 @@ DEFAULT_DESIRED_STATE_PATH = Path(
 )
 
 
-# Helper for time
-# %Y → 4-digit year %m → month %d
-# → day T → ISO separator
-# %H → hour (24h) %M → minute
-# %S → second Z → literal Z (means UTC)
-def _now_iso_utc() -> str:
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-
-
-# takes mac address string, strips whitespace, converts to lowercase, returns it
-def _normalize_mac(mac: str) -> str:
-    return mac.strip().lower()
-
-
 # filesystem safety: ensure parent directory of the state file exists
 def _ensure_parent_dir(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -43,7 +30,7 @@ def _ensure_parent_dir(path: Path) -> None:
 
 def load_desired_state(path: Path = DEFAULT_DESIRED_STATE_PATH) -> dict[str, Any]:
     if not path.exists():
-        return {"version": 1, "updated_at": _now_iso_utc(), "devices": {}}
+        return {"version": 1, "updated_at": utcnow_iso(), "devices": {}}
 
     try:
         with open(path, "r", encoding="utf-8") as f:
@@ -56,13 +43,13 @@ def load_desired_state(path: Path = DEFAULT_DESIRED_STATE_PATH) -> dict[str, Any
     except json.JSONDecodeError:
         # Corrupt desired state should not brick
         # Start fresh but keep a clear timestamp
-        return {"version": 1, "updated_at": _now_iso_utc(), "devices": {}}
+        return {"version": 1, "updated_at": utcnow_iso(), "devices": {}}
     
     # safety so it wont crash if folder doesn't exist or if JSON was half written and 
     # a crash happens and adds timestamps with fresh timestamps;
 def save_desired_state(obj: dict[str, Any], path: Path = DEFAULT_DESIRED_STATE_PATH) -> None:
     _ensure_parent_dir(path)
-    obj["updated_at"] = _now_iso_utc()
+    obj["updated_at"] = utcnow_iso()
 
     tmp = path.with_suffix(".tmp")
     with open(tmp, "w", encoding="utf-8") as f: # "w" for writing
@@ -83,7 +70,7 @@ def set_device_state(
         reason: str, 
         actor: str, 
         path: Path=DEFAULT_DESIRED_STATE_PATH) -> dict[str, Any]:
-    mac = _normalize_mac(mac)
+    mac = normalize_mac(mac)
     obj = load_desired_state(path)
     devices = obj.setdefault("devices", {})
 
@@ -94,14 +81,14 @@ def set_device_state(
             "state": state,
             "reason": reason,
             "actor": actor,
-            "updated_at": _now_iso_utc(),
+            "updated_at": utcnow_iso(),
         }
 
     save_desired_state(obj, path)
     return obj
 
 def get_device_state(mac: str, path: Path = DEFAULT_DESIRED_STATE_PATH) -> EnfState:
-    mac = _normalize_mac(mac)
+    mac = normalize_mac(mac)
     obj = load_desired_state(path)
     dev = (obj.get("devices") or {}).get(mac)
     if not dev:

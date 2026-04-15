@@ -3,71 +3,192 @@ import fs from "fs";
 import path from "path";
 import { config } from "../config";
 
-let db: Database.Database;
+/**
+ * Singleton database instance
+ * 
+ * This will be initialized once at application startup.
+ * All services access the database through helper functions
+ * (getDb, run, get, all) to enforce consistent usage.
+ */
+export let db: Database.Database;
 
 /**
- * Initializes the database connection
+ * Initializes the SQLite database
  * 
- * This function must run exactly once at backend startup
- * It guarantees:
- *  - database file exists
- *  - directory exists
- *  - schema exists
- *  - reliability settings are applied
+ * Responsibilites:
+ *  - Ensure datbase directory exists
+ *  - Open/create database file
+ *  - Apply performance and integrity settings
+ *  - Load base schema
+ *  - Apply migrations safely
  * 
- * In a deployable security appliance, the system must recover
- * automatically after reboot - no manual setup allowed
+ * This function MUST be called before any database usage.
  */
 export function initDatabase() {
-    // Path where SQLite database file will be stored
     const dbPath = config.DB_PATH;
 
-    // Extract directory path from database file path
+    // Ensure directory exists (important for first-time startup)
     const dir = path.dirname(dbPath);
-    
-    // Ensure database directory exists
     if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, {recursive: true});
+        fs.mkdirSync(dir, { recursive: true });
     }
 
-    // Open or create the SQLite database file
+    // Open SQLite database (creates file if it doesn't exist)
     db = new Database(dbPath);
 
-    // Write-Ahead Logging - prevents corruption during crashes or power loss
+    /**
+     * Enable Write-Ahead Logging (WAL)
+     * 
+     * Benefits:
+     *  - Better performance for concurrent reads/writes
+     *  - Reduced risk of corruption on crash
+     */
     db.pragma("journal_mode = WAL");
 
-    // Normal sync - balanced durability vs performance for appliance workloads
+    /**
+     * Enforce foreign key constraints
+     * 
+     * Ensures:
+     *  - alerts must reference valid devices
+     *  - enforcement actions must reference valid devices
+     */
     db.pragma("foreign_keys = ON");
 
-    // Ensure schema exists before backend starts serving requests
-    initializeSchema(); 
+    // Load base schema (tables)
+    initializeSchema();
+
+    // Apply incremental schema updates (safe upgrades)
+    applyMigrations();
 }
 
 /**
- * Loads and executers SQL schema file
+ * Resolves the absolute path to schema.sql
  * 
- * This guarantees the database structure exists on every startup
- * If tables alraedy exist -> SQLite ignores CREATE statements
+ * Why this exists:
+ * The location of schema.sql differs depending on how the backend is run:
  * 
- * Makes Bastion Xolot plug-and-play
+ *  - Development (ts-node):
+ *      schema is typically in src/db/schema.sql
+ * 
+ *  - Production build (compiled JS in /dist):
+ *      schema may be copied to dist/db/schema.sql
+ * 
+ *  - Runtime (__dirname-based resolution):
+ *      schema may exist relative to compiled file location
+ * 
+ * This function checks multiple possible locations and returns
+ * the first valid path that exists on disk.
+ * 
+ * This ensures the backend works reliably across:
+ *  - local development
+ *  - compiled builds
+ *  - deployment environments (e.g., Raspberry Pi)
+ */
+function resolveSchemaPath(): string {
+    /**
+     * Candidate paths to check (in priority order)
+     */
+    const candidates = [
+        // Same directory as compiled file (most reliable in production)
+        path.join(__dirname, "schema.sql"),
+
+        // Compiled project structure (dist folder)
+        path.join(process.cwd(), "dist/db/schema.sql"),
+
+        // Source project structure (development mode)
+        path.join(process.cwd(), "src/db/schema.sql"),
+    ];
+
+    /**
+     * Iterate through candidates and return the first valid file
+     */
+    for (const candidate of candidates) {
+        if (fs.existsSync(candidate)) {
+            return candidate;
+        }
+    }
+
+    /**
+     * If no valid path is found, throw a descriptive error
+     * 
+     * This helps debugging deployment issues quickly by showing
+     * exactly which paths were checked.
+     */
+    throw new Error(`Unable to locate schema.sql. Checked: ${candidates.join(", ")}`);
+}
+
+/**
+ * Loads the base schema from schema.sql
+ * 
+ * This creates tables if they do not exist.
+ * Safe to run multiple times due to IF NOT EXISTS usage.
  */
 function initializeSchema() {
-    // Resolve path to schema.sql located in same directory
-    const schemaPath = path.join(__dirname, "schema.sql");
+    const schemaPath = resolveSchemaPath();
 
-    // Read schema file as text
+    // Read schema file from disk
     const schema = fs.readFileSync(schemaPath, "utf-8");
 
-    // Excure SQL statements
+    // Execute SQL statements
     db.exec(schema);
 }
 
 /**
- * Returns active database connection
+ * Applies database migrations
  * 
- * Safety check prevents usage before initialization
- * If backend tries to access DB before initDatabase(),
- * that is a critical error
+ * Used to evolve schema over time without losing data.
+ * 
+ * Behavior:
+ *  - Runs ALTER TABLE statements
+ *  - Ignores "duplicate column" errors (already applied)
+ *  - Throws for any other unexpected error
+ * 
+ * This allows safe repeated startups without breaking the DB.
+ */
+function applyMigrations() {
+    const migrations = [
+        "ALTER TABLE enforcement_actions ADD COLUMN mode TEXT DEFAULT 'active'",
+        "ALTER TABLE enforcement_actions ADD COLUMN status TEXT DEFAULT 'applied'",
+        "ALTER TABLE enforcement_actions ADD COLUMN evidence TEXT",
+        "ALTER TABLE alerts ADD COLUMN fingerprint TEXT",
+        "ALTER TABLE alerts ADD COLUMN updated_at INTEGER",
+        "ALTER TABLE alerts ADD COLUMN resolved_at INTEGER",
+        "ALTER TABLE anomalies ADD COLUMN updated_at INTEGER",
+        "ALTER TABLE anomalies ADD COLUMN resolved_at INTEGER",
+    ];
+
+    for (const migration of migrations) {
+        try {
+            db.exec(migration);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+
+            // Ignore if column already exists (migration already applied)
+            if (!message.includes("duplicate column name")) {
+                throw error;
+            }
+        }
+    }
+
+    // Backfill timestamps for older rows created before lifecycle columns existed.
+    db.exec(`
+        UPDATE alerts
+        SET updated_at = COALESCE(updated_at, created_at),
+            resolved_at = CASE WHEN status = 'resolved' THEN COALESCE(resolved_at, updated_at, created_at) ELSE resolved_at END
+    `);
+
+    db.exec(`
+        UPDATE anomalies
+        SET updated_at = COALESCE(updated_at, created_at),
+            resolved_at = CASE WHEN status = 'resolved' THEN COALESCE(resolved_at, updated_at, created_at) ELSE resolved_at END
+    `);
+}
+
+/**
+ * Returns the active database instance
+ * 
+ * Throws an error if the database has not been initialized.
+ * This prevents accidental usage before initDatabase() runs.
  */
 export function getDb() {
     if (!db) {
@@ -79,56 +200,59 @@ export function getDb() {
 /**
  * Executes a write operation (INSERT, UPDATE, DELETE)
  * 
- * Used by services to modify persistent state
- * Example:
+ * Example usage:
  * run("INSERT INTO devices VALUES (?, ?)", [id, mac])
  * 
  * Centralizing DB access allows:
- *  - logging queries later
- *  - metrics collection
- *  - swapping database implementation if needed
+ *  - future logging of queries
+ *  - performance monitoring
+ *  - easier refactoring if DB changes
  */
 export function run(query: string, params: any[] = []) {
     return getDb().prepare(query).run(params);
 }
 
 /**
- * Excutes query returning a single row
+ * Executes a query returning a single row
  * 
- * Used when fetching one device, alert, or record
- * Returns undefined if no result exists
+ * Used for:
+ *  - fetching one device
+ *  - fetching one alert
+ * 
+ * Returns:
+ *  - object if found
+ *  - undefined if not found
  */
 export function get(query: string, params: any[] = []) {
     return getDb().prepare(query).get(params);
 }
 
 /**
- * Executes query returning multiple rows
+ * Executes a query returning multiple rows
  * 
  * Used for:
- *  - device lists
- *  - alert history
- *  - event queries
+ *  - listing devices
+ *  - listing alerts
+ *  - fetching history data
  */
 export function all(query: string, params: any[] = []) {
     return getDb().prepare(query).all(params);
 }
 
 /**
- * Executes multiple database operations automically
+ * Executes multiple operations atomically
  * 
- * If any operation fails -> all changes are rolled back
+ * If any operation fails -> ALL changes are rolled back
  * 
- * This is critical for Bastion Xolot:
- *  - events, device updates, and alerts must stay consistent
- *  - partial writes could create false security state
+ * Critical for:
+ *  - keeping security state consistent
+ *  - preventing partial writes (e.g., alert created but device not updated)
  * 
- * Example usage:
- * 
+ * Example:
  * transaction(() => {
- *  run("INSERT INTO events ...")
- *  run("UPDATE devices ...")
- *  run("INSERT INTO alerts ...")
+ *   run("INSERT INTO events ...")
+ *   run("UPDATE devices ...")
+ *   run("INSERT INTO alerts ...")
  * })
  */
 export function transaction<T>(fn: () => T): T {
