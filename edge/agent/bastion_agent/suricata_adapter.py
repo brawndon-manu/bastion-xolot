@@ -29,16 +29,64 @@ logger = logging.getLogger(__name__)
 
 def parse_eve_log(log_path: str = "/var/log/suricata/eve.json") -> list[dict]:
     """
-    Parse Suricata EVE JSON log and return Bastión Xólot events.
-
-    Enhancement implementation would:
-      1. Tail the EVE JSON log file
-      2. Parse alert-type entries
-      3. Map Suricata severity/category to Bastión severity
-      4. Build anomaly_detected or dns_blocked events
-      5. Correlate with existing device inventory
-
-    Returns empty list until implemented.
+    Minimal implementation:
+    - Reads alert events from file
+    - Parses Suricata alert events
+    - Returns normalized Bastion events
     """
-    logger.debug("suricata_adapter.parse_eve_log() — not yet implemented (enhancement)")
-    return []
+
+    import json
+
+    events = []
+
+    try:
+        with open(log_path, "r") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+
+                try:
+                    data = json.loads(line)
+                except json.JSONDecodeError:
+                    logger.warning("Skipping invalid JSON line in EVE log")
+                    continue
+
+                # Only handle Suricata alert events
+                if data.get("event_type") != "alert":
+                    continue
+
+                alert = data.get("alert", {})
+
+                if data.get("src_mac"):
+                    device_id = data.get("src_mac")
+                    device_id_type = "mac"
+                elif data.get("src_ip"):
+                    device_id = data.get("src_ip")
+                    device_id_type = "ip"
+                else:
+                    continue
+
+                # Map Suricata severity to Bastion severity
+                sev_map = {
+                    1: "high",
+                    2: "medium",
+                    3: "low"
+                }
+
+                severity = sev_map.get(alert.get("severity"), "low")
+
+                event = {
+                    "device_id": device_id,
+                    "device_id_type": device_id_type,
+                    "severity": severity,
+                    "reason": alert.get("signature", "suricata alert")
+                }
+
+                events.append(event)
+
+    except FileNotFoundError:
+        logger.warning(f"EVE log not found: {log_path}")
+    except Exception as e:
+        logger.error(f"Failed to parse EVE log: {e}")
+
+    return events

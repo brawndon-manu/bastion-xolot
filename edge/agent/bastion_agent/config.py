@@ -9,6 +9,15 @@ NOTE: Interface names (LAN_IFACE, WAN_IFACE) must be set by the
 """
 
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+PROTECTED_MACS = set(
+    mac.strip().lower()
+    for mac in os.getenv("PROTECTED_MACS", "").split(",")
+    if mac.strip()
+)
 
 
 # ═══════════════════════════════════════════
@@ -42,6 +51,10 @@ LAN_IFACE = os.getenv("BASTION_LAN_IFACE", "CHANGE ME")
 
 # Interface facing the modem / internet
 WAN_IFACE = os.getenv("BASTION_WAN_IFACE", "CHANGE ME")
+
+# IP address of the local gateway (router)
+# Used by anomaly detection and gateway probe monitor to identify gateway-directed traffic
+GATEWAY_IP = os.getenv("BASTION_GATEWAY_IP", "192.168.50.1")
 
 
 # ═══════════════════════════════════════════

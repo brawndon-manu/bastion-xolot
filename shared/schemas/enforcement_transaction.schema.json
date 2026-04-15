@@ -75,7 +75,7 @@
       "type": "object",
       "required": ["status"],
       "properties": {
-        "status": { "type": "string", "enum": ["PLANNED_ONLY", "EXECUTED", "FAILED"] },
+        "status": { "type": "string", "enum": ["NOOP","PLANNED_ONLY", "EXECUTED", "FAILED"] },
         "error": { "type": ["string", "null"] }
       },
       "additionalProperties": false
