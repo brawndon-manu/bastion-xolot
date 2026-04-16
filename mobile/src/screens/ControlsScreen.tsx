@@ -157,7 +157,11 @@ export default function ControlsScreen()
           </View>
           <Switch
             value={monitorOnly}
-            onValueChange={(value) => { dispatch(setMonitorOnly(value)); }}
+            onValueChange={async (value) => {
+              dispatch(setMonitorOnly(value));
+              try { await api.setMonitorOnly(value); } catch { /* ignore */ }
+              await loadHealth();
+            }}
           />
         </View>
     </View>

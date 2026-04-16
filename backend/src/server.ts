@@ -3,6 +3,9 @@ import http from "http";
 import { getRealtimeStatus, initWebSocket } from "./realtime/websocket";
 import { config } from "./config";
 
+// Mutable runtime state — allows toggling monitor-only without restart
+const runtimeState = { monitorOnly: config.MONITOR_ONLY };
+
 import { eventsRouter } from "./routes/events";
 import { alertsRouter } from "./routes/alerts";
 
@@ -87,12 +90,20 @@ app.get("/health", (req, res) => {
         status: "ok",                                                   // Indicates the service is running
         service: "bastion-backend",                                     // Name of the service (useful for monitoring tools)
         environment: config.NODE_ENV,                                   // Current environment (development, production, etc.)
-        monitor_only: config.MONITOR_ONLY,                              // Whether the system is in passive monitoring mode (no enforcement actions)
+        monitor_only: runtimeState.monitorOnly,                          // Whether the system is in passive monitoring mode (no enforcement actions)
         auto_quarantine_threshold: config.AUTO_QUARANTINE_THRESHOLD,    // Threshold value used to trigger automatic quarantine actions
         database: dbCheck.ok === 1 ? "ok" : "degraded",                 // Reports database health based on query result
         realtime: getRealtimeStatus(),                                  // Status of real-time system (e.g., WebSocket connections)
         time: new Date().toISOString(),                                 // Current server time (useful for debugging and monitoring)
     });
+});
+
+app.patch("/config", (req, res) => {
+    const body = req.body;
+    if (typeof body?.monitor_only === "boolean") {
+        runtimeState.monitorOnly = body.monitor_only;
+    }
+    res.json({ monitor_only: runtimeState.monitorOnly });
 });
 
 /**

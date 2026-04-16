@@ -528,6 +528,10 @@ export const api = {
     return result;
   },
 
+  setMonitorOnly: async (value: boolean): Promise<void> => {
+    await httpPost("/config", { monitor_only: value });
+  },
+
   /**
    * Fetches all known devices + alert by ID
    */
