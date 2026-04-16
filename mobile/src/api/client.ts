@@ -121,9 +121,20 @@ function toIso(millisecs: number)
 
 const API_PORT = 3000;
 
-function getHost() 
+/**
+ * IP of the Bastion Xolot appliance (Raspberry Pi) on the local network.
+ * Used in production builds only.
+ */
+const PRODUCTION_HOST = "192.168.50.1";
+
+function getHost()
 {
-  if (Platform.OS === "android") 
+  if (!__DEV__)
+  {
+    return PRODUCTION_HOST;
+  }
+
+  if (Platform.OS === "android")
   {
     return "10.0.2.2";
   }
