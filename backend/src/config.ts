@@ -83,6 +83,18 @@ if (NODE_ENV === "production") {
  * Object.freeze prevents accidental mutation at runtime
  * This is important for deterministic appliance behavior
  */
+// Deduplication window for alerts (default: 5 minutes)
+const ALERT_DEDUP_WINDOW_MS = parseInt(
+    process.env.ALERT_DEDUP_WINDOW_MS || "300000",
+    10
+);
+
+// Window for resolving open anomalies (default: 10 minutes)
+const ANOMALY_RESOLUTION_WINDOW_MS = parseInt(
+    process.env.ANOMALY_RESOLUTION_WINDOW_MS || "600000",
+    10
+);
+
 export const config = Object.freeze({
     NODE_ENV,
     DB_PATH,
@@ -90,4 +102,6 @@ export const config = Object.freeze({
     MONITOR_ONLY,
     AUTO_QUARANTINE_THRESHOLD,
     AUTH_SECRET,
+    ALERT_DEDUP_WINDOW_MS,
+    ANOMALY_RESOLUTION_WINDOW_MS,
 });
