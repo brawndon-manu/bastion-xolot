@@ -1,0 +1,24 @@
+# dependencies
+node_modules/
+
+# Android
+android/
+
+# iOS build / generated
+ios/Pods/
+ios/build/
+ios/DerivedData/
+
+# environment
+.env
+.env.local
+
+# logs
+*.log
+
+# temp
+coverage/
+.metro-health-check*
+
+# macOS
+.DS_Store

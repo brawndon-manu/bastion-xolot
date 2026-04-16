@@ -1,0 +1,704 @@
+import { Platform } from "react-native";
+
+/**
+ * API client for app
+ * Handles REST requests
+ * Websocket connection and event normalization
+ */
+
+type Listener = (event: any) => void;
+
+let listeners: Listener[] = [];
+let ws: WebSocket | null = null;
+let memoryToken: string | null = null;
+
+export type PairResult = { token: string };
+
+/**
+ * Frontend types used by the mobile UI
+ */
+export type Device = {
+  id: string;
+  name: string;
+  ip: string;
+  mac: string;
+  hostname?: string;
+  trusted: boolean;
+  firstSeen: string;
+  lastSeen: string;
+  riskScore: number;
+  status: string;
+};
+
+export type Alert = {
+  id: string;
+  severity: "Low" | "Medium" | "High";
+  deviceId: string;
+  title: string;
+  plainEnglish: string;
+  evidence: string[];
+  timestamp: string;
+  type: string;
+  confidence: number | null;
+  sourceLabel: "Behavioral" | "IDS" | "Correlated" | "DNS" | "Suspicious Connection" | "General";
+  status: string;
+  updatedAt: string;
+  resolvedAt: string | null;
+};
+
+/**
+ * Enforcment action shape used by controls/history screens
+ */
+export type EnforcementAction = {
+  id: string;
+  deviceId: string;
+  action: string;
+  reason: string;
+  initiatedBy: string;
+  timestamp: string;
+  mode: string;
+  status: string;
+  evidence: string | null;
+};
+
+export type HealthStatus = {
+  status: string;
+  service: string;
+  environment: string;
+  monitor_only: boolean;
+  auto_quarantine_threshold: number;
+  database: string;
+  realtime: { initialized: boolean; client_count: number; };
+  time: string;
+};
+
+/**
+ * Raw backend device response types
+ */
+type BackendDevice = {
+  id: string;
+  mac_address: string | null;
+  ip_address: string | null;
+  hostname: string | null;
+  first_seen: number;
+  last_seen: number;
+  risk_score: number;
+  status: string;
+};
+
+type BackendAlert = {
+  id: string;
+  device_id: string | null;
+  type: string;
+  severity: string;
+  title: string;
+  explanation: string | null;
+  evidence: string | null;
+  confidence: number | null;
+  status: string;
+  created_at: number;
+  updated_at: number;
+  resolved_at: number | null;
+};
+
+type BackendEnforcementAction = {
+  id: string;
+  device_id: string;
+  action: string;
+  reason: string;
+  initiated_by: string;
+  created_at: number;
+  mode?: string;
+  status?: string;
+  evidence?: string | null;
+};
+
+
+function toIso(millisecs: number) 
+{
+  return new Date(millisecs).toISOString();
+}
+
+const API_PORT = 3000;
+
+function getHost() 
+{
+  if (Platform.OS === "android") 
+  {
+    return "10.0.2.2";
+  }
+
+  return "localhost";
+}
+
+/**
+ * Base HTTP URL for REST calls
+ */
+function baseUrl() 
+{
+  return `http://${getHost()}:${API_PORT}`;
+}
+
+/**
+ * Base Websocket URL for realtime updates
+ */
+function wsUrl() 
+{
+  return `ws://${getHost()}:${API_PORT}`;
+}
+
+/**
+ * Maps backend device record into the frontend device shape
+ */
+function mapDevice(device: BackendDevice): Device 
+{
+  let ip = device.ip_address;
+  let mac = device.mac_address;
+  let hostname : string | undefined;
+
+  if (device.hostname === null)
+  {
+   hostname = undefined;
+  }
+  else
+  {
+    hostname = device.hostname;
+  }
+
+  let name = "";
+  
+  if (!ip) 
+  {
+    ip = "—";
+  }
+
+  if (!mac)
+  {
+    mac = "—";
+  }
+
+  if (hostname)
+  {
+    name = hostname;
+  } 
+  else if (ip !== "—")
+  {
+    name = "Device " + ip;
+  }
+  else
+  {
+    name = "Device " + mac;
+  }
+
+  return {
+    id: device.id,
+    name: name,
+    ip: ip,
+    mac: mac,
+    hostname: hostname,
+    trusted: true,
+    firstSeen: toIso(device.first_seen),
+    lastSeen: toIso(device.last_seen),
+    riskScore: device.risk_score,
+    status: device.status
+  };
+}
+
+/**
+ * Normalizes backend severity strings for UI
+ */
+function mapSeverity(severity: string): "Low" | "Medium" | "High" 
+{
+  const lowerSeverity = severity.toLowerCase();
+  
+  if (lowerSeverity === "low")
+  {
+    return "Low";
+  }
+
+  if (lowerSeverity === "high") 
+  {
+    return "High";
+  }
+
+  return "Medium";
+}
+
+/**
+ * Maps backend alert type values into cleaner sourcer labels for UI
+ */
+function mapSourceLabel(type: string): "Behavioral" | "IDS" | "Correlated" | "DNS" | "Suspicious Connection" | "General" 
+{
+  if (type === "behavioral_anomaly") 
+  {
+    return "Behavioral";
+  }
+  if (type === "ids_alert")
+   { 
+    return "IDS";
+   }
+  if (type === "correlated_threat") 
+  {
+    return "Correlated";
+  }
+  if (type === "dns_block")
+  { 
+    return "DNS";
+  }
+  if (type === "suspicious_connection")
+  { 
+    return "Suspicious Connection";
+  }
+
+  return "General";
+}
+
+/**
+ * Converts backend evidence keys into labels for displaying
+ */
+const evidenceLabelMap: { [key: string]: string } = {
+  device_id: "Device ID",
+  ip: "IP Address",
+  ip_address: "IP Address",
+  mac_address: "MAC Address",
+  hostname: "Hostname",
+  type: "Event Type",
+  domain: "Domain",
+  destination: "Destination",
+  dest_ip: "Destination IP",
+  timestamp: "Timestamp",
+  signature: "IDS Signature",
+  category: "Category",
+  flow_count: "Flow Count",
+  total_bytes: "Total Bytes",
+  unique_destinations: "Unique Destinations",
+  risk_score: "Risk Score",
+  status: "Status",
+  reason: "Reason",
+  severity: "Severity",
+  confidence: "Confidence",
+  summary: "Summary",
+  created_at: "Created At",
+  updated_at: "Updated At",
+  resolved_at: "Resolved At",
+  event: "Event",
+  anomalies: "Anomalies",
+  ids_context: "IDS Context"
+};
+
+/**
+ * Converts raw backend evidence into array of readable strings for display
+ */
+function mapEvidence(evidence: string | null): string[] 
+{
+  
+  if (!evidence)
+  {
+    return [];
+  }
+
+  try {
+    let parsed = JSON.parse(evidence);
+
+    if (Array.isArray(parsed)) 
+    {
+      let result: string[] = [];
+      
+      for(const item of parsed)
+      {
+        result.push(String(item));
+      }
+
+      return result;
+    }
+
+    if (parsed && typeof parsed === "object")
+    {
+      let result: string[] = [];
+
+      for (let key in parsed)
+      {
+      
+      let label = evidenceLabelMap[key] || key;
+
+      let value = parsed[key];
+
+      if (Array.isArray(value))
+      {
+        result.push(label + ": " + value.length + " item(s)");
+      }
+      else if (typeof value === "object" && value !== null)
+      {
+        result.push(label + ": details available");
+      }
+      else
+      {
+        result.push(label + ": " + String(value));
+      }
+
+      }
+      return result;
+    }
+  
+    return [String(parsed)];
+  } 
+  catch (error) 
+  {
+    return [evidence];
+  }
+}
+
+/**
+ * Maps backend alert into frontend alert shape
+ */
+function mapAlert(alert: BackendAlert): Alert 
+{
+  let deviceId = alert.device_id;
+  let explanation = alert.explanation;
+
+  if (!deviceId)
+  {
+    deviceId = "";
+  }
+  
+  if (!explanation)
+  {
+    explanation = "No explanation available.";
+  }
+
+  return {
+    id: alert.id,
+    severity: mapSeverity(alert.severity),
+    deviceId: deviceId,
+    title: alert.title,
+    plainEnglish: explanation,
+    evidence: mapEvidence(alert.evidence),
+    timestamp: toIso(alert.created_at),
+    type: alert.type,
+    confidence: alert.confidence,
+    sourceLabel: mapSourceLabel(alert.type),
+    status: alert.status,
+    updatedAt: toIso(alert.updated_at),
+    resolvedAt: alert.resolved_at ? toIso(alert.resolved_at) : null
+  };
+}
+
+/**
+ * Maps backend enforcement action into frontend enforcement shape
+ */
+function mapEnforcementAction(action: BackendEnforcementAction): EnforcementAction 
+{
+  return {
+    id: action.id,
+    deviceId: action.device_id,
+    action: action.action,
+    reason: action.reason,
+    initiatedBy: action.initiated_by,
+    timestamp: toIso(action.created_at),
+    mode: action.mode ?? "active",
+    status: action.status ?? "applied",
+    evidence: action.evidence ?? null
+  };
+}
+
+/**
+ * GET helper
+ */
+async function httpGet<T>(path: string): Promise<T> 
+{
+  let url = baseUrl() + path;
+  let headers: any = 
+  {
+    "Content-Type": "application/json"
+  };
+
+  if (memoryToken) 
+  {
+    headers["Authorization"] = "Bearer " + memoryToken;
+  }
+
+  let res = await fetch(url, {method: "GET", headers: headers});
+
+  if (!res.ok)
+  {
+    let text = "";
+
+    try {
+      text = await res.text();
+    } 
+    catch {
+      text = "";
+    }
+
+    throw new Error("HTTP " + res.status + " " + path + " " + text);
+  }
+
+  let data = await res.json();
+  return data as T;
+}
+
+/**
+ * POST helper
+ */
+async function httpPost<T>(path: string, body?: unknown): Promise<T> 
+{
+  let url = baseUrl() + path;
+  let headers: any = 
+  {
+    "Content-Type": "application/json"
+  };
+
+  if (memoryToken)
+  {
+    headers["Authorization"] = "Bearer " + memoryToken;
+  }
+
+  let options: any =
+  {
+    method: "POST",
+    headers: headers
+  };
+
+  if (body)
+  {
+    options.body = JSON.stringify(body);
+  }
+
+  let res = await fetch(url, options);
+    
+  if (!res.ok) 
+  {
+    let text = "";
+    
+    try {
+      text = await res.text();
+    } 
+    catch {
+      text = "";
+    }
+
+    throw new Error("HTTP " + res.status + " " + path + " " + text);
+  }
+
+  let data = await res.json();
+  return data as T;
+}
+
+/**
+ * Main API object used by app
+ * Handles health checks, alerts, devices, enforcement, realtime websocket updates
+ */
+export const api = {
+  // still using local PIN update later
+  pair: async (pin: string): Promise<PairResult> => {
+    let trimmedPin = pin.trim();
+
+    if (trimmedPin !== "1234") 
+    {
+      throw new Error("Invalid PIN (try 1234 for now)");
+    }
+
+    let token = "demo-token";
+    memoryToken = token;
+    
+    return { token };
+  },
+
+  getStoredToken: async (): Promise<string | null> => {
+    return memoryToken;
+  },
+
+  clearToken: async (): Promise<void> => {
+    memoryToken = null;
+  },
+
+  health: async (): Promise<HealthStatus> => {
+    let result = await httpGet<HealthStatus>("/health");
+    return result;
+  },
+
+  /**
+   * Fetches all known devices + alert by ID
+   */
+  getDevices: async (): Promise<Device[]> => {
+    let rows = await httpGet<BackendDevice[]>("/devices");
+    let devices: Device[] = [];
+  
+    for (let device of rows)
+    {
+      devices.push(mapDevice(device));
+    }
+
+    return devices;
+  },
+
+  getDevice: async (id: string): Promise<Device | null> => {
+    let row = await httpGet<BackendDevice>("/devices/" + id);
+    let device = mapDevice(row);
+    return device;
+  },
+
+  /**
+   * Fetches all alerts + alert by id
+   */
+  getAlerts: async (): Promise<Alert[]> => {
+    let rows = await httpGet<BackendAlert[]>("/alerts");
+    let alerts: Alert[] = [];
+
+    for (let alert of rows)
+    {
+      alerts.push(mapAlert(alert));
+    }
+
+    return alerts;
+  },
+
+  getAlert: async (id: string): Promise<Alert | null> => {
+    let row = await httpGet<BackendAlert>("/alerts/" + id);
+    let alert = mapAlert(row);
+    return alert;
+  },
+
+  /**
+   * Requests manual quarantine of a device
+   */
+  quarantineDevice: async (id: string, reason = "manual_quarantine"): Promise<EnforcementAction> => {
+    let row = await httpPost<BackendEnforcementAction>("/enforcement/quarantine/" + id, { reason: reason, initiated_by: "operator"});
+    let action = mapEnforcementAction(row);
+    return action;
+  },
+
+  /**
+   * Requests release of a quarantined device
+   */
+  unquarantineDevice: async (id: string): Promise<EnforcementAction> => {
+    let row = await httpPost<BackendEnforcementAction>("/enforcement/release/" + id, {initiated_by: "operator"});
+    let action = mapEnforcementAction(row);
+    return action;
+  },
+
+  /**
+   * Fetches enforcement history
+   */
+  getEnforcementHistory: async (): Promise<EnforcementAction[]> => {
+    let rows = await httpGet<BackendEnforcementAction[]>("/enforcement/history");
+    let history: EnforcementAction[] = [];
+    
+    for (let action of rows)
+    {
+      history.push(mapEnforcementAction(action));
+    }
+    return history;
+  },
+
+/**
+ * Opens Websocket connection
+ */
+  connectRealtime: () => {
+    if (ws) 
+    {
+      return;
+    }
+
+    ws = new WebSocket(wsUrl());
+
+    ws.onopen = () => {
+      listeners.forEach((listener) => listener({ type: "WS_OPEN" }));
+    };
+
+    ws.onclose = () => {
+      listeners.forEach((listener) => listener({ type: "WS_CLOSED" }));
+      ws = null;
+    };
+
+    ws.onerror = () => {
+      listeners.forEach((listener) => listener({ type: "WS_ERROR" }));
+    };
+
+    ws.onmessage = (message) => {
+      try {
+        let parsedMessage = JSON.parse(String(message.data));
+
+        if (!parsedMessage)
+        {
+          return;
+        }
+
+        if ((parsedMessage.event === "alert.created" || parsedMessage.event === "alert.updated") && parsedMessage.payload) 
+        {
+          let alert = mapAlert(parsedMessage.payload as BackendAlert);
+
+          listeners.forEach((listener) => {
+            listener({
+              type: "ALERT_UPSERT",
+              payload: alert
+            });
+          });
+
+          return;
+        }
+
+      if (parsedMessage.event === "alert.resolved" && parsedMessage.payload) 
+      {
+        let alert = mapAlert(parsedMessage.payload as BackendAlert);
+
+        listeners.forEach((listener) => {
+          listener({
+            type: "ALERT_RESOLVED",
+            payload: alert
+           });
+          });
+
+        return;
+      }
+
+      if ((parsedMessage.event === "device.quarantined" || parsedMessage.event === "device.released" || parsedMessage.event === "device.monitor_only") && parsedMessage.payload) 
+      {
+        let action = mapEnforcementAction(parsedMessage.payload as BackendEnforcementAction);
+
+        listeners.forEach((listener) => {
+          listener({
+            type: "ENFORCEMENT_UPDATED",
+            payload: action
+      });
+        });
+
+        return;
+      }
+
+      listeners.forEach((listener) => {
+        listener({
+          type: "WS_EVENT",
+          event: parsedMessage.event,
+          payload: parsedMessage.payload
+          });
+          });
+        } catch (error) {
+        }
+     };  
+  },
+
+  /**
+   * Closes the Websocket connection
+   */
+  disconnectRealtime: () => {
+    if (ws) 
+    {
+      ws.close();
+    }
+    ws = null;
+  },
+
+  /**
+   *  Registers a realtime listener
+   */
+  subscribe: (listener: Listener) => {
+    listeners.push(listener);
+
+    return () => {
+      listeners = listeners.filter((currentListener) => {
+        return currentListener !== listener;
+      });
+   };
+  }
+};
