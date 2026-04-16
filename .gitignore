@@ -24,6 +24,7 @@ data/
 # Python bytecode
 *.pyc
 __pycache__/
+*.egg-info/
 
 # Claude Code internals
 .claude/worktrees/
