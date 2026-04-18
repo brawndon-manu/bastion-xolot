@@ -6,19 +6,45 @@ import { loadDevices } from "../state/slices/devicesSlice";
 import { loadAlerts, alertUpsert, alertResolved } from "../state/slices/alertsSlice";
 import Icon from "react-native-vector-icons/Feather";
 import { api, HealthStatus } from "../api/client";
+import { T } from "../theme";
 
-function MetricCard({ label, value }: { label: string; value: string }) 
-{
+/**
+ * Aztec step-crenellation border — pyramid battlement silhouette in gold.
+ * Alternating tall/short columns evoke the stepped temple profile.
+ */
+function AztecStepBorder({ color = T.gold }: { color?: string }) {
   return (
-    <View style={styles.metricCard}>
-      <Text style={styles.metricValue}>{value}</Text>
+    <View style={{ flexDirection: "row", height: 10, marginBottom: 20 }}>
+      {Array.from({ length: 28 }, (_, i) => (
+        <View
+          key={i}
+          style={{
+            flex: 1,
+            height: i % 2 === 0 ? 10 : 5,
+            backgroundColor: color,
+            opacity: 0.65,
+            alignSelf: "flex-end",
+          }}
+        />
+      ))}
+    </View>
+  );
+}
+
+/**
+ * Apple Health-style metric tile: huge coloured number, muted label below.
+ * Coloured top border signals the metric's category at a glance.
+ */
+function MetricCard({ label, value, accent }: { label: string; value: string; accent: string }) {
+  return (
+    <View style={[styles.metricCard, { borderTopColor: accent, borderTopWidth: 2 }]}>
+      <Text style={[styles.metricValue, { color: accent }]}>{value}</Text>
       <Text style={styles.metricLabel}>{label}</Text>
     </View>
   );
 }
 
-export default function DashboardScreen() 
-{
+export default function DashboardScreen() {
   const dispatch = useDispatch<AppDispatch>();
   const devices = useSelector((state: RootState) => state.devices.items);
   const devicesLoading = useSelector((state: RootState) => state.devices.loading);
@@ -26,150 +52,70 @@ export default function DashboardScreen()
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [manualRefreshing, setManualRefreshing] = useState(false);
 
-  const loadHealth = async (showRefreshSpinner = false) => {
+  const loadHealth = async (showSpinner = false) => {
     try {
-      if (showRefreshSpinner) 
-      {
-        setManualRefreshing(true);
-      }
-
-      const result = await api.health();
-      setHealth(result);
-    } 
-    catch {
+      if (showSpinner) setManualRefreshing(true);
+      setHealth(await api.health());
+    } catch {
       setHealth(null);
-    } 
-    finally {
-      if (showRefreshSpinner) 
-      {
-        setManualRefreshing(false);
-      }
+    } finally {
+      if (showSpinner) setManualRefreshing(false);
     }
   };
-
 
   useEffect(() => {
     dispatch(loadDevices());
     dispatch(loadAlerts());
     loadHealth();
-
-    const healthTimer = setInterval(() => {
-        loadHealth();
-      }, 5000);
-
+    const healthTimer = setInterval(loadHealth, 5000);
     api.connectRealtime();
     const unsub = api.subscribe((event) => {
-
-      if (!event)
-      {
-        return;
-      }
-      if (event.type === "ALERT_UPSERT") 
-      {
-        dispatch(alertUpsert(event.payload));
-      }
-
-      if (event.type === "ALERT_RESOLVED") 
-      {
-        dispatch(alertResolved(event.payload));
-      }
-
-      if (event.type === "ENFORCEMENT_UPDATED") 
-      {
-        dispatch(loadDevices());
-        loadHealth();
-      }
-      if (event.type === "WS_EVENT" && event.event === "event.received") 
-      {
-        dispatch(loadDevices());
-      }
+      if (!event) return;
+      if (event.type === "ALERT_UPSERT")        dispatch(alertUpsert(event.payload));
+      if (event.type === "ALERT_RESOLVED")      dispatch(alertResolved(event.payload));
+      if (event.type === "ENFORCEMENT_UPDATED") { dispatch(loadDevices()); loadHealth(); }
+      if (event.type === "WS_EVENT" && event.event === "event.received") dispatch(loadDevices());
     });
-    
-    return () => {
-      clearInterval(healthTimer);
-      unsub();
-      };
-    }, [dispatch]);
+    return () => { clearInterval(healthTimer); unsub(); };
+  }, [dispatch]);
 
-    let systemState = "offline";
+  const systemState = health ? (health.status === "ok" ? "online" : "degraded") : "offline";
 
-    if (health) 
-    {
-      if (health.status === "ok") 
-      {
-        systemState = "online";
-      } 
-      else 
-      {
-        systemState = "degraded";
-      }
-    }
+  const activeAlerts = useMemo(() => alerts.filter((a) => a.status === "active").length, [alerts]);
+  const highAlerts   = useMemo(() => alerts.filter((a) => a.severity === "High" && a.status === "active").length, [alerts]);
+  const quarantined  = useMemo(() => devices.filter((d) => d.status === "quarantined").length, [devices]);
 
-  const activeAlerts = useMemo(() => {
-    let count = 0;
+  // Status visual config
+  let iconName: "check-circle" | "alert-circle" | "x-circle" = "x-circle";
+  let iconColor  = T.danger;
+  let titleColor = T.dangerText;
+  let titleText  = "SYSTEM OFFLINE";
+  let subText    = "Network monitoring is offline.";
+  let stepColor  = T.danger;
 
-    for (let i = 0; i < alerts.length; i++) {
-      if (alerts[i].status === "active") {
-        count++;
-      }
-    }
-
-    return count;
-  }, [alerts]);
-
-  const highSeverityAlerts = useMemo(() => {
-    let count = 0;
-
-    for (let i = 0; i < alerts.length; i++) {
-      if (alerts[i].severity === "High" && alerts[i].status === "active") {
-        count++;
-      }
-    }
-
-    return count;
-  }, [alerts]);
-
-  const quarantinedDevices = useMemo(() => {
-    let count = 0;
-
-    for (let i = 0; i < devices.length; i++) {
-      if (devices[i].status === "quarantined") {
-        count++;
-      }
-    }
-
-    return count;
-  }, [devices]);
-
-  let systemIconName: "check-circle" | "alert-circle" | "x-circle" = "x-circle";
-  let systemIconColor = "#FF4D4D";
-  let systemTitleColor = "#FF4D4D";
-  let systemTitleText = "SYSTEM OFFLINE";
-  let systemSubText = "Network monitoring is offline.";
-
-  if (systemState === "online") 
-  {
-    systemIconName = "check-circle";
-    systemIconColor = "#18E36B";
-    systemTitleColor = "#18E36B";
-    systemTitleText = "SYSTEM ONLINE";
-    systemSubText = "Your network is actively monitored.";
-  } 
-  else if (systemState === "degraded") 
-  {
-    systemIconName = "alert-circle";
-    systemIconColor = "#FFD166";
-    systemTitleColor = "#FFD166";
-    systemTitleText = "SYSTEM DEGRADED";
-    systemSubText = "Monitoring may be limited.";
+  if (systemState === "online") {
+    iconName   = "check-circle";
+    iconColor  = T.jade;
+    titleColor = T.jadeText;
+    titleText  = "SYSTEM ONLINE";
+    subText    = "Your network is actively monitored.";
+    stepColor  = T.gold;
+  } else if (systemState === "degraded") {
+    iconName   = "alert-circle";
+    iconColor  = T.warning;
+    titleColor = T.warningText;
+    titleText  = "SYSTEM DEGRADED";
+    subText    = "Monitoring may be limited.";
+    stepColor  = T.warning;
   }
 
   return (
-  <ScrollView
+    <ScrollView
       style={styles.root}
-      contentContainerStyle={styles.contentContainer}
+      contentContainerStyle={styles.content}
       refreshControl={
         <RefreshControl
+          tintColor={T.jade}
           refreshing={devicesLoading || manualRefreshing}
           onRefresh={() => {
             dispatch(loadDevices());
@@ -179,53 +125,75 @@ export default function DashboardScreen()
         />
       }
     >
+      {/* ── System Status Card ─────────────────────────── */}
       <View style={styles.systemCard}>
-        <View style={styles.systemRow}>
-        <Icon
-          name={systemIconName}
-          size={28}
-          color={systemIconColor}
-        />
-      <Text
-        style={[
-          styles.systemOnline,
-          { color: systemTitleColor }
-        ]}
-      >
-        {systemTitleText}
-      </Text>
+        <AztecStepBorder color={stepColor} />
+        <View style={styles.statusRow}>
+          <Icon name={iconName} size={28} color={iconColor} />
+          <Text style={[styles.statusTitle, { color: titleColor }]}>{titleText}</Text>
         </View>
-
-      <Text style={styles.systemSub}>
-        {systemSubText}
-      </Text>
-      
+        <Text style={styles.statusSub}>{subText}</Text>
       </View>
 
-      <View style={styles.metricsRow}>
-        <MetricCard label="Devices" value={String(devices.length)} />
-        <MetricCard label="Active Alerts" value={String(activeAlerts)} />
-      </View>
-
-      <View style={styles.metricsRow}>
-        <MetricCard label="High Alerts" value={String(highSeverityAlerts)} />
-        <MetricCard label="Quarantined" value={String(quarantinedDevices)} />
+      {/* ── Metrics ────────────────────────────────────── */}
+      <Text style={styles.sectionLabel}>NETWORK OVERVIEW</Text>
+      <View style={styles.grid}>
+        <MetricCard label="DEVICES"        value={String(devices.length)} accent={T.jadeText} />
+        <MetricCard label="ACTIVE ALERTS"  value={String(activeAlerts)}  accent={activeAlerts > 0 ? T.warningText : T.jadeText} />
+        <MetricCard label="HIGH SEVERITY"  value={String(highAlerts)}    accent={highAlerts > 0 ? T.dangerText : T.jadeText} />
+        <MetricCard label="QUARANTINED"    value={String(quarantined)}   accent={quarantined > 0 ? T.dangerText : T.jadeText} />
       </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#c4c4cc" },
-  contentContainer: { padding: 16, paddingBottom: 28 },
-  sectionTitle: { color: "#fff", fontSize: 16, fontWeight: "800", marginTop: 10, marginBottom: 12 },
-  systemCard: { backgroundColor: "#fff", borderRadius: 22, paddingHorizontal: 20, paddingVertical: 28, borderWidth: 1, borderColor: "#fff", marginBottom: 22 },
-  systemRow: { flexDirection: "row", alignItems: "center", gap: 14, marginBottom: 10 },
-  systemOnline: { fontSize: 26, fontWeight: "900" },
-  systemSub: { color: "#0c0d0e", opacity: 0.9, fontSize: 16 },
-  systemMeta: { color: "#0c0d0e", marginTop: 8, fontSize: 12 },
-  metricsRow: { flexDirection: "row", gap: 10, marginBottom: 12 },
-  metricCard: { flex: 1, backgroundColor: "#fff", borderRadius: 16, padding: 14,  borderWidth: 1, borderColor: "#fff", alignItems: "center" },
-  metricValue: { color: "#0c0d0e", fontSize: 22, fontWeight: "900" },
-  metricLabel: { color: "#0c0d0e", marginTop: 6, fontSize: 12, fontWeight: "700" },
+  root: { flex: 1, backgroundColor: T.bgBase },
+  content: { padding: 16, paddingBottom: 40 },
+
+  systemCard: {
+    backgroundColor: T.bgCard,
+    borderRadius: 20,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 24,
+    marginBottom: 28,
+    elevation: 8,
+    shadowColor: T.gold,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+  },
+  statusRow: { flexDirection: "row", alignItems: "center", gap: 14, marginBottom: 10 },
+  statusTitle: { fontSize: 22, fontWeight: "900", letterSpacing: 1 },
+  statusSub: { color: T.textSecondary, fontSize: 15, lineHeight: 22 },
+
+  sectionLabel: {
+    color: T.textMuted,
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 1.5,
+    marginBottom: 12,
+  },
+  grid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  metricCard: {
+    width: "47.5%",
+    backgroundColor: T.bgCard,
+    borderRadius: 18,
+    paddingVertical: 20,
+    paddingHorizontal: 16,
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+  },
+  metricValue: { fontSize: 52, fontWeight: "700", lineHeight: 58 },
+  metricLabel: {
+    color: T.textMuted,
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 1.2,
+    marginTop: 6,
+  },
 });

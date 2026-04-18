@@ -2,26 +2,70 @@ import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import type { Device } from "../api/client";
 import StatusPill from "./StatusPill";
+import { T } from "../theme";
 
-export default function DeviceCard({ device }: { device: Device }) 
-{
+export default function DeviceCard({ device }: { device: Device }) {
+  const stripe = device.status === "quarantined" ? T.danger : T.jade;
 
   return (
     <View style={styles.card}>
-      <View style={styles.top}>
-        <Text style={styles.name}>{device.name}</Text>
-        <StatusPill status={(device.status as "normal" | "quarantined") || "normal"} />
+      {/* Left stripe signals status at a glance */}
+      <View style={[styles.stripe, { backgroundColor: stripe }]} />
+
+      <View style={styles.body}>
+        <View style={styles.top}>
+          <Text style={styles.name} numberOfLines={1}>{device.name}</Text>
+          <StatusPill status={(device.status as "normal" | "quarantined") || "normal"} />
+        </View>
+
+        <View style={styles.metaRow}>
+          <Text style={styles.metaLabel}>IP</Text>
+          <Text style={styles.metaValue}>{device.ip}</Text>
+        </View>
+        <View style={styles.metaRow}>
+          <Text style={styles.metaLabel}>MAC</Text>
+          <Text style={styles.metaValue}>{device.mac}</Text>
+        </View>
+        <View style={styles.metaRow}>
+          <Text style={styles.metaLabel}>RISK</Text>
+          <Text style={[styles.metaValue, device.riskScore > 100 ? { color: T.dangerText } : null]}>
+            {device.riskScore}
+          </Text>
+        </View>
       </View>
-      <Text style={styles.meta}>IP: {device.ip}</Text>
-      <Text style={styles.meta}>MAC: {device.mac}</Text>
-      <Text style={styles.meta}>Risk score: {device.riskScore}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  card: { backgroundColor: "#fff", borderRadius: 16, padding: 14, borderWidth: 1, borderColor: "#fff" },
-  top: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 10 },
-  name: { color: "#0c0d0e", fontWeight: "800", fontSize: 16, flexShrink: 1 },
-  meta: { color: "#0c0d0e", marginTop: 2 },
+  card: {
+    backgroundColor: T.bgCard,
+    borderRadius: 16,
+    flexDirection: "row",
+    overflow: "hidden",
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+  },
+  stripe: { width: 4 },
+  body: { flex: 1, padding: 14 },
+  top: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+    gap: 10,
+  },
+  name: { color: T.textPrimary, fontWeight: "700", fontSize: 16, flexShrink: 1 },
+  metaRow: { flexDirection: "row", gap: 10, marginTop: 3 },
+  metaLabel: {
+    color: T.textMuted,
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 1,
+    width: 34,
+  },
+  metaValue: { color: T.textSecondary, fontSize: 13 },
 });
