@@ -1,65 +1,8 @@
 import React, { useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet } from "react-native";
+import { View, Text, TextInput, Pressable, StyleSheet, Image } from "react-native";
 import { useDispatch } from "react-redux";
 import { AppDispatch } from "../state/store";
 import { pairWithGateway } from "../state/slices/authSlice";
-import { T } from "../theme";
-
-/**
- * Aztec solar disc — concentric rings + radiating spokes.
- * Xolotl guides the sun through the underworld each night;
- * this glyph marks that sacred journey.
- */
-function AztecSunDisc() {
-  const size = 120;
-  const spokeAngles = [0, 45, 90, 135];
-
-  return (
-    <View style={{ width: size, height: size, alignItems: "center", justifyContent: "center" }}>
-      {/* Radiating spokes */}
-      {spokeAngles.map((angle) => (
-        <View
-          key={angle}
-          style={{
-            position: "absolute",
-            width: 1.5,
-            height: size,
-            backgroundColor: T.gold,
-            opacity: 0.35,
-            transform: [{ rotate: `${angle}deg` }],
-          }}
-        />
-      ))}
-      {/* Outer ring */}
-      <View style={{
-        position: "absolute",
-        width: size, height: size,
-        borderRadius: size / 2,
-        borderWidth: 2, borderColor: T.gold, opacity: 0.7,
-      }} />
-      {/* Middle ring */}
-      <View style={{
-        position: "absolute",
-        width: size * 0.68, height: size * 0.68,
-        borderRadius: size * 0.34,
-        borderWidth: 1.5, borderColor: T.gold, opacity: 0.55,
-      }} />
-      {/* Inner ring */}
-      <View style={{
-        position: "absolute",
-        width: size * 0.38, height: size * 0.38,
-        borderRadius: size * 0.19,
-        borderWidth: 1.5, borderColor: T.gold, opacity: 0.7,
-      }} />
-      {/* Solar core */}
-      <View style={{
-        width: size * 0.18, height: size * 0.18,
-        borderRadius: size * 0.09,
-        backgroundColor: T.gold, opacity: 0.9,
-      }} />
-    </View>
-  );
-}
 
 export default function OnboardingScreen() {
   const dispatch = useDispatch<AppDispatch>();
@@ -71,39 +14,42 @@ export default function OnboardingScreen() {
     try {
       await dispatch(pairWithGateway(pin)).unwrap();
     } catch {
-      setError("Pairing failed. Check your PIN and try again.");
+      setError("Pairing failed");
     }
   };
 
   return (
     <View style={styles.root}>
-      {/* ── Hero ── */}
-      <View style={styles.hero}>
-        <AztecSunDisc />
-        <Text style={styles.brandName}>BASTIÓN XÓLOT</Text>
-        <Text style={styles.brandTagline}>Guardian of Your Network</Text>
+      {/* top spacer pushes logo+title to vertical center */}
+      <View style={styles.topSpacer} />
+
+      <View style={styles.brandSection}>
+        <Image
+          source={require("../assets/logo.png")}
+          style={styles.logo}
+          resizeMode="contain"
+        />
+        <Text style={styles.title}>BASTIÓN XÓLOT</Text>
+        <Text style={styles.tagline}>Guardian of Your Network</Text>
       </View>
 
-      {/* ── Pairing Card ── */}
-      <View style={styles.card}>
-        <Text style={styles.cardEyebrow}>CONNECT TO GATEWAY</Text>
-        <Text style={styles.cardTitle}>Enter your pairing PIN</Text>
+      <View style={styles.bottomSpacer} />
 
+      <View style={styles.card}>
+        <Text style={styles.cardLabel}>CONNECT TO GATEWAY</Text>
+        <Text style={styles.cardTitle}>Enter your pairing PIN</Text>
         <TextInput
           value={pin}
           onChangeText={setPin}
           style={styles.input}
-          placeholder="PIN"
-          placeholderTextColor={T.textMuted}
+          placeholderTextColor="#7C889A"
           keyboardType="number-pad"
+          textAlign="center"
         />
-
         {error && <Text style={styles.error}>{error}</Text>}
-
         <Pressable style={styles.button} onPress={onPair}>
           <Text style={styles.buttonText}>Connect</Text>
         </Pressable>
-
         <Text style={styles.hint}>Demo PIN: 1234</Text>
       </View>
     </View>
@@ -113,70 +59,61 @@ export default function OnboardingScreen() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: T.bgBase,
-    justifyContent: "center",
+    backgroundColor: "#0a0a0a",
     paddingHorizontal: 24,
     paddingBottom: 40,
   },
-  hero: { alignItems: "center", marginBottom: 52 },
-  brandName: {
-    color: T.gold,
+  topSpacer: { flex: 1 },
+  brandSection: { alignItems: "center" },
+  logo: { width: 120, height: 120, marginBottom: 20 },
+  title: {
     fontSize: 28,
     fontWeight: "900",
-    letterSpacing: 5,
-    marginTop: 24,
-    textAlign: "center",
+    color: "#C9A84C",
+    letterSpacing: 3,
   },
-  brandTagline: {
-    color: T.textSecondary,
-    fontSize: 13,
-    letterSpacing: 2,
-    marginTop: 8,
+  tagline: {
+    fontSize: 14,
+    color: "#888",
+    marginTop: 6,
+    letterSpacing: 1,
   },
+  bottomSpacer: { flex: 1 },
   card: {
-    backgroundColor: T.bgCard,
-    borderRadius: 22,
+    backgroundColor: "#1a1a1a",
+    borderRadius: 20,
     padding: 24,
-    elevation: 12,
-    shadowColor: T.gold,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.20,
-    shadowRadius: 16,
   },
-  cardEyebrow: {
-    color: T.textMuted,
+  cardLabel: {
     fontSize: 11,
-    fontWeight: "700",
+    color: "#888",
     letterSpacing: 2,
-    marginBottom: 6,
+    marginBottom: 8,
   },
   cardTitle: {
-    color: T.textPrimary,
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "700",
-    marginBottom: 20,
+    color: "#fff",
+    marginBottom: 16,
   },
   input: {
-    backgroundColor: T.bgCardElevated,
-    borderRadius: 14,
-    paddingHorizontal: 16,
+    backgroundColor: "#2a2a2a",
+    borderRadius: 12,
     paddingVertical: 14,
-    color: T.textPrimary,
-    fontSize: 28,
-    fontWeight: "700",
+    color: "#fff",
+    fontSize: 24,
+    fontWeight: "600",
     letterSpacing: 8,
-    textAlign: "center",
-    borderWidth: 1,
-    borderColor: T.borderSubtle,
+    marginBottom: 4,
   },
   button: {
     marginTop: 16,
-    backgroundColor: T.jade,
-    borderRadius: 14,
+    backgroundColor: "#4CAF50",
+    borderRadius: 12,
     paddingVertical: 16,
     alignItems: "center",
   },
-  buttonText: { color: "#000", fontWeight: "800", fontSize: 16 },
-  hint: { color: T.textMuted, fontSize: 12, textAlign: "center", marginTop: 12 },
-  error: { marginTop: 10, color: T.dangerText, fontSize: 14, textAlign: "center" },
+  buttonText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  error: { marginTop: 8, color: "#FF6B6B", textAlign: "center" },
+  hint: { marginTop: 12, color: "#555", fontSize: 12, textAlign: "center" },
 });
