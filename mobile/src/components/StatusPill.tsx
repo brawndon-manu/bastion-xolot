@@ -1,44 +1,43 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
+import { T } from "../theme";
 
-export default function StatusPill({ status }: { status: string }) 
-{
-  let label = "Unknown";
-  let style = styles.neutral;
+export default function StatusPill({ status }: { status: string }) {
+  let label  = "Unknown";
+  let bg     = T.pillNeutralBg;
+  let border = T.borderTurquoise;
+  let color  = T.turquoiseText;
 
-  if (status === "quarantined") 
-  {
-    label = "Quarantined";
-    style = styles.bad;
-  } 
-  else if (status === "warning") 
-  {
-    label = "Warning";
-    style = styles.warn;
-  } 
-  else if (status === "offline") 
-  {
-    label = "Offline";
-    style = styles.bad;
-  } 
-  else 
-  {
-    label = "Normal";
-    style = styles.ok;
+  if (status === "quarantined" || status === "offline") {
+    label  = status === "quarantined" ? "Quarantined" : "Offline";
+    bg     = T.pillBadBg;
+    border = T.borderDanger;
+    color  = T.dangerText;
+  } else if (status === "warning") {
+    label  = "Warning";
+    bg     = T.pillWarnBg;
+    border = T.borderWarning;
+    color  = T.warningText;
+  } else if (status === "normal") {
+    label  = "Normal";
+    bg     = T.pillOkBg;
+    border = T.borderJade;
+    color  = T.jadeText;
   }
 
   return (
-    <View style={[styles.pill, style]}>
-      <Text style={styles.text}>{label}</Text>
+    <View style={[styles.pill, { backgroundColor: bg, borderColor: border }]}>
+      <Text style={[styles.text, { color }]}>{label}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  pill: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, borderWidth: 1 },
-  text: { color: "#fff", fontSize: 12, fontWeight: "800" },
-  ok: { backgroundColor: "#163A2D", borderColor: "#2E7D5C" },
-  warn: { backgroundColor: "#3B2F12", borderColor: "#B7892E" },
-  bad: { backgroundColor: "#3A1B1B", borderColor: "#B23A3A" },
-  neutral: { backgroundColor: "#1A2F45", borderColor: "#2E5BFF"}
+  pill: {
+    paddingHorizontal: 11,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  text: { fontSize: 11, fontWeight: "800", letterSpacing: 0.3 },
 });

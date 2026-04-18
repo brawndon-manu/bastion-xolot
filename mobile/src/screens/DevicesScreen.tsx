@@ -9,47 +9,32 @@ import { loadDevices } from "../state/slices/devicesSlice";
 import { CompositeScreenProps } from "@react-navigation/native";
 import { BottomTabScreenProps } from "@react-navigation/bottom-tabs";
 import { api } from "../api/client";
-
+import { T } from "../theme";
 
 /*
-screen for viewing all devices on network / refresh and navigaton to details
-*/
+ * Screen for viewing all devices on network — refresh and navigation to details.
+ */
 
 type Props = CompositeScreenProps<
   BottomTabScreenProps<import("../App").MainTabParamList, "Devices">,
   NativeStackScreenProps<RootStackParamList>
 >;
 
-export default function DevicesScreen({ navigation }: Props) 
-{
+export default function DevicesScreen({ navigation }: Props) {
   const dispatch = useDispatch<AppDispatch>();
   const { items, loading } = useSelector((state: RootState) => state.devices);
 
   useEffect(() => {
     dispatch(loadDevices());
-    
+
     api.connectRealtime();
     const unsub = api.subscribe((event) => {
-      if (!event) 
-      {
-        return;
-      }
-
-      if (event.type === "ENFORCEMENT_UPDATED") 
-      {
-        dispatch(loadDevices());
-      }
-
-      if (event.type === "WS_EVENT" && event.event === "event.received") 
-      {
-        dispatch(loadDevices());
-      }
-      
+      if (!event) return;
+      if (event.type === "ENFORCEMENT_UPDATED") dispatch(loadDevices());
+      if (event.type === "WS_EVENT" && event.event === "event.received") dispatch(loadDevices());
     });
 
-    return () => {
-      unsub();
-    };
+    return () => { unsub(); };
   }, [dispatch]);
 
   return (
@@ -57,8 +42,14 @@ export default function DevicesScreen({ navigation }: Props)
       <FlatList
         data={items}
         keyExtractor={(device) => device.id}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={() => dispatch(loadDevices())} />}
-        contentContainerStyle={{ gap: 10, paddingBottom: 20 }}
+        refreshControl={
+          <RefreshControl
+            tintColor={T.jade}
+            refreshing={loading}
+            onRefresh={() => dispatch(loadDevices())}
+          />
+        }
+        contentContainerStyle={styles.list}
         renderItem={({ item }) => (
           <Pressable onPress={() => navigation.navigate("DeviceDetail", { deviceId: item.id })}>
             <DeviceCard device={item} />
@@ -71,7 +62,7 @@ export default function DevicesScreen({ navigation }: Props)
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, padding: 16, backgroundColor: "#c4c4cc" },
-  helper: { color: "#B7C0CC", marginBottom: 12 },
-  empty: { color: "#0c0d0e", marginTop: 20 }
+  root: { flex: 1, backgroundColor: T.bgBase },
+  list: { padding: 16, gap: 10, paddingBottom: 24 },
+  empty: { color: T.textSecondary, marginTop: 24, textAlign: "center", letterSpacing: 0.5 },
 });
