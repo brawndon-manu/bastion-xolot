@@ -3,6 +3,7 @@ import { View, Text, TextInput, Pressable, StyleSheet, Image } from "react-nativ
 import { useDispatch } from "react-redux";
 import { AppDispatch } from "../state/store";
 import { pairWithGateway } from "../state/slices/authSlice";
+import { T } from "../theme";
 
 export default function OnboardingScreen() {
   const dispatch = useDispatch<AppDispatch>();
@@ -14,42 +15,48 @@ export default function OnboardingScreen() {
     try {
       await dispatch(pairWithGateway(pin)).unwrap();
     } catch {
-      setError("Pairing failed");
+      setError("Pairing failed. Check your PIN and try again.");
     }
   };
 
   return (
     <View style={styles.root}>
-      {/* top spacer pushes logo+title to vertical center */}
+      {/* spacer pushes hero down so title sits vertically centered */}
       <View style={styles.topSpacer} />
 
-      <View style={styles.brandSection}>
+      {/* ── Hero ── */}
+      <View style={styles.hero}>
         <Image
           source={require("../assets/logo.png")}
           style={styles.logo}
           resizeMode="contain"
         />
-        <Text style={styles.title}>BASTIÓN XÓLOT</Text>
-        <Text style={styles.tagline}>Guardian of Your Network</Text>
+        <Text style={styles.brandName}>BASTIÓN XÓLOT</Text>
+        <Text style={styles.brandTagline}>Guardian of Your Network</Text>
       </View>
 
       <View style={styles.bottomSpacer} />
 
+      {/* ── Pairing Card ── */}
       <View style={styles.card}>
-        <Text style={styles.cardLabel}>CONNECT TO GATEWAY</Text>
+        <Text style={styles.cardEyebrow}>CONNECT TO GATEWAY</Text>
         <Text style={styles.cardTitle}>Enter your pairing PIN</Text>
+
         <TextInput
           value={pin}
           onChangeText={setPin}
           style={styles.input}
-          placeholderTextColor="#7C889A"
+          placeholder="PIN"
+          placeholderTextColor={T.textMuted}
           keyboardType="number-pad"
-          textAlign="center"
         />
+
         {error && <Text style={styles.error}>{error}</Text>}
+
         <Pressable style={styles.button} onPress={onPair}>
           <Text style={styles.buttonText}>Connect</Text>
         </Pressable>
+
         <Text style={styles.hint}>Demo PIN: 1234</Text>
       </View>
     </View>
@@ -59,61 +66,72 @@ export default function OnboardingScreen() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: "#0a0a0a",
+    backgroundColor: T.bgBase,
     paddingHorizontal: 24,
     paddingBottom: 40,
   },
   topSpacer: { flex: 1 },
-  brandSection: { alignItems: "center" },
-  logo: { width: 120, height: 120, marginBottom: 20 },
-  title: {
+  bottomSpacer: { flex: 1 },
+  hero: { alignItems: "center" },
+  logo: { width: 120, height: 120 },
+  brandName: {
+    color: T.gold,
     fontSize: 28,
     fontWeight: "900",
-    color: "#C9A84C",
-    letterSpacing: 3,
+    letterSpacing: 5,
+    marginTop: 24,
+    textAlign: "center",
   },
-  tagline: {
-    fontSize: 14,
-    color: "#888",
-    marginTop: 6,
-    letterSpacing: 1,
-  },
-  bottomSpacer: { flex: 1 },
-  card: {
-    backgroundColor: "#1a1a1a",
-    borderRadius: 20,
-    padding: 24,
-  },
-  cardLabel: {
-    fontSize: 11,
-    color: "#888",
+  brandTagline: {
+    color: T.textSecondary,
+    fontSize: 13,
     letterSpacing: 2,
-    marginBottom: 8,
+    marginTop: 8,
+  },
+  card: {
+    backgroundColor: T.bgCard,
+    borderRadius: 22,
+    padding: 24,
+    elevation: 12,
+    shadowColor: T.gold,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.20,
+    shadowRadius: 16,
+  },
+  cardEyebrow: {
+    color: T.textMuted,
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 2,
+    marginBottom: 6,
   },
   cardTitle: {
-    fontSize: 18,
+    color: T.textPrimary,
+    fontSize: 20,
     fontWeight: "700",
-    color: "#fff",
-    marginBottom: 16,
+    marginBottom: 20,
   },
   input: {
-    backgroundColor: "#2a2a2a",
-    borderRadius: 12,
+    backgroundColor: T.bgCardElevated,
+    borderRadius: 14,
+    paddingHorizontal: 16,
     paddingVertical: 14,
-    color: "#fff",
-    fontSize: 24,
-    fontWeight: "600",
+    color: T.textPrimary,
+    fontSize: 28,
+    fontWeight: "700",
     letterSpacing: 8,
-    marginBottom: 4,
+    textAlign: "center",
+    borderWidth: 1,
+    borderColor: T.borderSubtle,
   },
   button: {
     marginTop: 16,
-    backgroundColor: "#4CAF50",
-    borderRadius: 12,
+    backgroundColor: T.jade,
+    borderRadius: 14,
     paddingVertical: 16,
     alignItems: "center",
   },
-  buttonText: { color: "#fff", fontWeight: "700", fontSize: 16 },
-  error: { marginTop: 8, color: "#FF6B6B", textAlign: "center" },
-  hint: { marginTop: 12, color: "#555", fontSize: 12, textAlign: "center" },
+  buttonText: { color: "#000", fontWeight: "800", fontSize: 16 },
+  hint: { color: T.textMuted, fontSize: 12, textAlign: "center", marginTop: 12 },
+  error: { marginTop: 10, color: T.dangerText, fontSize: 14, textAlign: "center" },
 });
