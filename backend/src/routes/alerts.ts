@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { listAlerts, getAlert } from "../services/alert_service";
+import { listAlerts, getAlert, refreshAlert } from "../services/alert_service";
 
 /**
  * Router responsible for alert retrieval endpoints.
@@ -64,6 +64,33 @@ alertsRouter.get("/", async (req, res) => {
  *  - Logs backend error
  *  - Returns generic failure response
  */
+alertsRouter.post("/:id/resolve", async (req, res) => {
+    try {
+        const id = req.params.id;
+
+        if (!id) {
+            return res.status(400).json({ error: "Missing alert id" });
+        }
+
+        const existing = await getAlert(id);
+
+        if (!existing) {
+            return res.status(404).json({ error: "Alert not found" });
+        }
+
+        if (existing.status === "resolved") {
+            return res.json(existing);
+        }
+
+        const resolved = refreshAlert(id, { status: "resolved" });
+        res.json(resolved);
+
+    } catch (err) {
+        console.error("Failed to resolve alert:", err);
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
+
 alertsRouter.get("/:id", async (req, res) => {
     try {
         // Extract alert identifier from URL path

@@ -16,6 +16,7 @@ export type Device = {
     mac_address: string | null;     // MAC address, if known
     ip_address: string | null;      // Current IP address, if known
     hostname: string | null;        // Hostname from reverse lookup or event payload
+    vendor: string | null;          // Manufacturer from OUI lookup
     first_seen: number;             // First time the device was observed
     last_seen: number;              // Most recent time the device was observed
     risk_score: number;             // Accumulated risk score used by correlation/enforcement
@@ -33,6 +34,7 @@ type DeviceInput = {
     mac_address?: string;
     ip_address?: string;
     hostname?: string;
+    vendor?: string;
 };
 
 /**
@@ -49,6 +51,7 @@ export function createDevice(data: DeviceInput): Device {
         mac_address: data.mac_address ?? null,
         ip_address: data.ip_address ?? null,
         hostname: data.hostname ?? null,
+        vendor: data.vendor ?? null,
         first_seen: Date.now(),
         last_seen: Date.now(),
         risk_score: 0,
@@ -57,21 +60,22 @@ export function createDevice(data: DeviceInput): Device {
 
     /**
      * Persist the new device.
-     * 
+     *
      * first_seen and last_seen are initialized to the same timestamp because
      * this is the first observation for the device.
      */
     db.prepare(`
         INSERT INTO devices (
-            id, mac_address, ip_address, hostname,
+            id, mac_address, ip_address, hostname, vendor,
             first_seen, last_seen, risk_score, status
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
         device.id,
         device.mac_address,
         device.ip_address,
         device.hostname,
+        device.vendor,
         device.first_seen,
         device.last_seen,
         device.risk_score,
@@ -124,12 +128,14 @@ function updateDeviceDetails(id: string, data: DeviceInput): void {
         SET mac_address = COALESCE(?, mac_address),
             ip_address = COALESCE(?, ip_address),
             hostname = COALESCE(?, hostname),
+            vendor = COALESCE(?, vendor),
             last_seen = ?
         WHERE id = ?
     `).run(
         data.mac_address ?? null,
         data.ip_address ?? null,
         data.hostname ?? null,
+        data.vendor ?? null,
         Date.now(),
         id
     );

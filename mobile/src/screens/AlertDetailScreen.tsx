@@ -1,12 +1,13 @@
-import React, { useEffect } from "react";
-import { View, Text, StyleSheet, ScrollView } from "react-native";
+import React, { useEffect, useState } from "react";
+import { View, Text, StyleSheet, ScrollView, Pressable, Alert } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../App";
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "../state/store";
-import { selectAlertById, loadAlerts } from "../state/slices/alertsSlice";
+import { selectAlertById, loadAlerts, alertResolved } from "../state/slices/alertsSlice";
 import Icon from "react-native-vector-icons/Feather";
 import PlainEnglishPanel from "../components/PlainEnglishPanel";
+import { api } from "../api/client";
 import { T } from "../theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "AlertDetail">;
@@ -25,10 +26,24 @@ export default function AlertDetailScreen({ route }: Props) {
   const alert = useSelector((state: RootState) =>
     selectAlertById(state, route.params.alertId)
   );
+  const [resolving, setResolving] = useState(false);
 
   useEffect(() => {
     if (!alert) dispatch(loadAlerts());
   }, [dispatch, alert]);
+
+  const onResolve = async () => {
+    if (!alert || alert.status === "resolved") return;
+    try {
+      setResolving(true);
+      const resolved = await api.resolveAlert(alert.id);
+      dispatch(alertResolved(resolved));
+    } catch (err: any) {
+      Alert.alert("Error", err?.message ?? "Failed to resolve alert.");
+    } finally {
+      setResolving(false);
+    }
+  };
 
   if (!alert) {
     return (
@@ -102,6 +117,23 @@ export default function AlertDetailScreen({ route }: Props) {
           body={Math.round(alert.confidence * 100) + "%"}
         />
       )}
+
+      {alert.status === "resolved" ? (
+        <View style={styles.resolvedBadge}>
+          <Icon name="check-circle" size={16} color={T.jadeText} />
+          <Text style={styles.resolvedText}>Resolved</Text>
+        </View>
+      ) : (
+        <Pressable
+          style={[styles.resolveBtn, resolving && styles.btnDisabled]}
+          onPress={onResolve}
+          disabled={resolving}
+        >
+          <Text style={styles.resolveBtnText}>
+            {resolving ? "Resolving…" : "Mark as Resolved"}
+          </Text>
+        </Pressable>
+      )}
     </ScrollView>
   );
 }
@@ -156,5 +188,38 @@ const styles = StyleSheet.create({
     color: T.textPrimary,
     lineHeight: 22,
     fontSize: 14,
+  },
+  resolveBtn: {
+    marginTop: 8,
+    backgroundColor: T.bgCard,
+    borderRadius: 16,
+    paddingVertical: 16,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: T.borderJade,
+  },
+  resolveBtnText: {
+    color: T.jadeText,
+    fontWeight: "800",
+    fontSize: 15,
+    letterSpacing: 0.5,
+  },
+  btnDisabled: { opacity: 0.5 },
+  resolvedBadge: {
+    marginTop: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 14,
+    backgroundColor: T.pillOkBg,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: T.borderJade,
+  },
+  resolvedText: {
+    color: T.jadeText,
+    fontWeight: "800",
+    fontSize: 15,
   },
 });
