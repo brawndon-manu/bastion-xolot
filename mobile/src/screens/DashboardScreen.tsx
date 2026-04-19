@@ -206,10 +206,10 @@ const styles = StyleSheet.create({
   },
   ollinArt: {
     position: "absolute",
-    bottom: 40,
+    bottom: 80,
     left: 0,
     right: 0,
     height: 260,
-    opacity: 0.15,
+    opacity: 0.6,
   },
 });
