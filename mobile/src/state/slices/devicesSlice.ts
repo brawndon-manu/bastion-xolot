@@ -6,12 +6,14 @@ type DevicesState = {
   items: Device[];
   loading: boolean;
   error: string | null;
+  nicknames: Record<string, string>;
 };
 
 const initialState: DevicesState = {
   items: [],
   loading: false,
-  error: null
+  error: null,
+  nicknames: {},
 };
 
 export const loadDevices = createAsyncThunk("devices/load", async () => {
@@ -23,6 +25,14 @@ const devicesSlice = createSlice({
   name: "devices",
   initialState,
   reducers: {
+    setNickname: (state, action: { payload: { deviceId: string; nickname: string } }) => {
+      const { deviceId, nickname } = action.payload;
+      if (nickname.trim()) {
+        state.nicknames[deviceId] = nickname.trim();
+      } else {
+        delete state.nicknames[deviceId];
+      }
+    },
     deviceSeen: (state, action) => {
       let device: Device = action.payload;
       let index = state.items.findIndex((x) => x.id === device.id);
@@ -53,10 +63,12 @@ const devicesSlice = createSlice({
   }
 });
 
-export const { deviceSeen } = devicesSlice.actions;
+export const { deviceSeen, setNickname } = devicesSlice.actions;
 
-export const selectDeviceById = (state: RootState, id: string) => {
-  return state.devices.items.find((d) => d.id === id);
-};
+export const selectDeviceById = (state: RootState, id: string) =>
+  state.devices.items.find((d) => d.id === id);
+
+export const selectNickname = (state: RootState, id: string) =>
+  state.devices.nicknames[id] ?? null;
 
 export default devicesSlice.reducer;

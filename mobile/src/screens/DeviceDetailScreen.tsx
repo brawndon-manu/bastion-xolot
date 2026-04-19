@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, Pressable, Alert, ScrollView } from "react-native";
+import { View, Text, StyleSheet, Pressable, Alert, ScrollView, TextInput } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../App";
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "../state/store";
-import { selectDeviceById, loadDevices } from "../state/slices/devicesSlice";
+import { selectDeviceById, selectNickname, loadDevices, setNickname } from "../state/slices/devicesSlice";
 import StatusPill from "../components/StatusPill";
 import { api } from "../api/client";
 import { T } from "../theme";
@@ -25,7 +25,10 @@ export default function DeviceDetailScreen({ route }: Props) {
   const device = useSelector((state: RootState) =>
     selectDeviceById(state, route.params.deviceId)
   );
+  const nickname = useSelector((state: RootState) => selectNickname(state, route.params.deviceId));
   const [busy, setBusy] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState("");
 
   useEffect(() => {
     if (!device) dispatch(loadDevices());
@@ -83,6 +86,45 @@ export default function DeviceDetailScreen({ route }: Props) {
       <View style={styles.statusRow}>
         <Text style={styles.statusLabel}>Behavioral Status</Text>
         <StatusPill status={(device.status as "normal" | "quarantined") || "normal"} />
+      </View>
+
+      {/* Name */}
+      <Text style={styles.sectionLabel}>DEVICE NAME</Text>
+      <View style={styles.card}>
+        {editingName ? (
+          <View style={styles.nameEditRow}>
+            <TextInput
+              style={styles.nameInput}
+              value={nameInput}
+              onChangeText={setNameInput}
+              placeholder="Enter a name…"
+              placeholderTextColor={T.textMuted}
+              autoFocus
+            />
+            <Pressable
+              style={styles.saveBtn}
+              onPress={() => {
+                dispatch(setNickname({ deviceId: device.id, nickname: nameInput }));
+                setEditingName(false);
+              }}
+            >
+              <Text style={styles.saveBtnText}>Save</Text>
+            </Pressable>
+            <Pressable onPress={() => setEditingName(false)} style={styles.cancelBtn}>
+              <Text style={styles.cancelBtnText}>Cancel</Text>
+            </Pressable>
+          </View>
+        ) : (
+          <Pressable
+            style={styles.nameRow}
+            onPress={() => { setNameInput(nickname ?? ""); setEditingName(true); }}
+          >
+            <Text style={styles.nameDisplay}>
+              {nickname ?? "Tap to give this device a name"}
+            </Text>
+            <Text style={styles.editHint}>{nickname ? "Edit" : "+"}</Text>
+          </Pressable>
+        )}
       </View>
 
       {/* Info card */}
@@ -178,6 +220,43 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: T.borderSubtle,
   },
+
+  nameRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  nameDisplay: { color: T.textPrimary, fontSize: 15, fontWeight: "600", flex: 1 },
+  editHint: { color: T.gold, fontWeight: "700", fontSize: 14 },
+  nameEditRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    gap: 8,
+  },
+  nameInput: {
+    flex: 1,
+    color: T.textPrimary,
+    backgroundColor: T.bgBase,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 15,
+    borderWidth: 1,
+    borderColor: T.borderSubtle,
+  },
+  saveBtn: {
+    backgroundColor: T.jade,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  saveBtnText: { color: "#000", fontWeight: "800", fontSize: 13 },
+  cancelBtn: { paddingHorizontal: 8, paddingVertical: 8 },
+  cancelBtnText: { color: T.textMuted, fontSize: 13 },
 
   // Action button
   actionBtn: {
