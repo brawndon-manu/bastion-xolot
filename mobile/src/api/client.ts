@@ -123,23 +123,12 @@ const API_PORT = 3000;
 
 /**
  * IP of the Bastion Xolot appliance (Raspberry Pi) on the local network.
- * Used in production builds only.
  */
-const PRODUCTION_HOST = "192.168.50.1";
+const PI_HOST = "192.168.50.1";
 
 function getHost()
 {
-  if (!__DEV__)
-  {
-    return PRODUCTION_HOST;
-  }
-
-  if (Platform.OS === "android")
-  {
-    return "192.168.50.1";
-  }
-
-  return "localhost";
+  return PI_HOST;
 }
 
 /**
