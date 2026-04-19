@@ -73,7 +73,7 @@ const styles = StyleSheet.create({
   topSpacer: { flex: 1 },
   bottomSpacer: { flex: 1 },
   hero: { alignItems: "center" },
-  logo: { width: 200, height: 200 },
+  logo: { width: 260, height: 260 },
   brandName: {
     color: T.gold,
     fontSize: 28,
