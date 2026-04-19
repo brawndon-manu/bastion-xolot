@@ -130,6 +130,8 @@ export default function DeviceDetailScreen({ route }: Props) {
       {/* Info card */}
       <Text style={styles.sectionLabel}>DEVICE INFO</Text>
       <View style={styles.card}>
+        <Row label="Manufacturer" value={device.vendor && device.vendor !== "Unknown" ? device.vendor : "—"} />
+        <View style={styles.divider} />
         <Row label="IP Address" value={device.ip} />
         <View style={styles.divider} />
         <Row label="MAC Address" value={device.mac} />

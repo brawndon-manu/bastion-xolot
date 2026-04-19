@@ -31,6 +31,7 @@ from typing import Optional
 
 from bastion_agent.config import LAN_IFACE
 from bastion_agent.events import build_device_seen, build_alert, enqueue_and_dispatch
+from bastion_agent.oui import lookup_vendor
 from bastion_agent.storage import upsert_device, get_known_device
 from bastion_agent.utils import normalize_mac, is_valid_mac, resolve_hostname
 
@@ -145,6 +146,9 @@ def scan_network() -> list[dict]:
         # Try reverse DNS for hostname
         hostname = resolve_hostname(ip)
 
+        # OUI vendor lookup from MAC prefix
+        vendor = lookup_vendor(mac)
+
         # Update local device store — returns True if brand new
         is_new = upsert_device(mac, ip, hostname)
 
@@ -154,6 +158,7 @@ def scan_network() -> list[dict]:
             ip_address=ip,
             hostname=hostname,
             is_new=is_new,
+            vendor=vendor,
         )
         enqueue_and_dispatch(event)
         events.append(event)

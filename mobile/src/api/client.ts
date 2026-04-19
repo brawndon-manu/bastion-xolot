@@ -23,6 +23,7 @@ export type Device = {
   ip: string;
   mac: string;
   hostname?: string;
+  vendor: string | null;
   trusted: boolean;
   firstSeen: string;
   lastSeen: string;
@@ -124,7 +125,7 @@ const API_PORT = 3000;
 /**
  * IP of the Bastion Xolot appliance (Raspberry Pi) on the local network.
  */
-const PI_HOST = "192.168.50.1";
+const PI_HOST = "100.118.192.23";
 
 function getHost()
 {
@@ -196,6 +197,7 @@ function mapDevice(device: BackendDevice): Device
     ip: ip,
     mac: mac,
     hostname: hostname,
+    vendor: (device as any).vendor ?? null,
     trusted: true,
     firstSeen: toIso(device.first_seen),
     lastSeen: toIso(device.last_seen),
@@ -561,6 +563,11 @@ export const api = {
     let row = await httpGet<BackendAlert>("/alerts/" + id);
     let alert = mapAlert(row);
     return alert;
+  },
+
+  resolveAlert: async (id: string): Promise<Alert> => {
+    let row = await httpPost<BackendAlert>("/alerts/" + id + "/resolve");
+    return mapAlert(row);
   },
 
   /**

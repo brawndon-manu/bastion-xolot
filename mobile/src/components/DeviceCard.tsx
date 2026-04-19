@@ -21,6 +21,9 @@ export default function DeviceCard({ device }: { device: Device }) {
         <View style={styles.top}>
           <View style={styles.nameBlock}>
             <Text style={styles.name} numberOfLines={1}>{displayName}</Text>
+            {device.vendor && device.vendor !== "Unknown" && (
+              <Text style={styles.vendorLine}>{device.vendor}</Text>
+            )}
             <Text style={styles.ipLine}>{device.ip}</Text>
           </View>
           <StatusPill status={(device.status as "normal" | "quarantined") || "normal"} />
@@ -68,6 +71,7 @@ const styles = StyleSheet.create({
   },
   nameBlock: { flexShrink: 1 },
   name: { color: T.textPrimary, fontWeight: "700", fontSize: 16 },
+  vendorLine: { color: T.gold, fontSize: 11, fontWeight: "600", marginTop: 1 },
   ipLine: { color: T.textMuted, fontSize: 12, marginTop: 2 },
   metaRow: { flexDirection: "row", gap: 10, marginTop: 3 },
   metaLabel: {

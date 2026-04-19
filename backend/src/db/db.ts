@@ -155,6 +155,7 @@ function applyMigrations() {
         "ALTER TABLE alerts ADD COLUMN resolved_at INTEGER",
         "ALTER TABLE anomalies ADD COLUMN updated_at INTEGER",
         "ALTER TABLE anomalies ADD COLUMN resolved_at INTEGER",
+        "ALTER TABLE devices ADD COLUMN vendor TEXT",
     ];
 
     for (const migration of migrations) {

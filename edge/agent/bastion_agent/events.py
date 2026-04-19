@@ -50,6 +50,7 @@ def build_device_seen(
     ip_address: str,
     hostname: str | None = None,
     is_new: bool = False,
+    vendor: str | None = None,
 ) -> dict:
     """Build a device_seen event (emitted by discovery module)."""
     event = _base_event("device_seen", source="discovery", device_id=mac_address)
@@ -58,6 +59,7 @@ def build_device_seen(
         "ip_address": ip_address,
         "hostname": hostname,
         "is_new": is_new,
+        "vendor": vendor,
     }
     return event
 
