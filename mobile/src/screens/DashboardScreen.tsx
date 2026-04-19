@@ -144,13 +144,13 @@ export default function DashboardScreen() {
         <MetricCard label="HIGH SEVERITY"  value={String(highAlerts)}    accent={highAlerts > 0 ? T.dangerText : T.jadeText} />
         <MetricCard label="QUARANTINED"    value={String(quarantined)}   accent={quarantined > 0 ? T.dangerText : T.jadeText} />
       </View>
+
+      <Image
+        source={require("../assets/OllinBX.png")}
+        style={styles.ollinArt}
+        resizeMode="contain"
+      />
     </ScrollView>
-    <Image
-      source={require("../assets/OllinBX.png")}
-      style={styles.ollinArt}
-      resizeMode="contain"
-      pointerEvents="none"
-    />
     </View>
   );
 }
@@ -206,11 +206,9 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   ollinArt: {
-    position: "absolute",
-    top: "35%",
-    left: 0,
-    right: 0,
+    width: "100%",
     height: 260,
-    opacity: 0.6,
+    marginTop: 24,
+    opacity: 1,
   },
 });
