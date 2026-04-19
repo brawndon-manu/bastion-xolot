@@ -206,7 +206,7 @@ const styles = StyleSheet.create({
   },
   ollinArt: {
     position: "absolute",
-    bottom: 80,
+    top: "35%",
     left: 0,
     right: 0,
     height: 260,
