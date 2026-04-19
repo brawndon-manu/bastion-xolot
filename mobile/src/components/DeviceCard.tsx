@@ -1,11 +1,16 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
+import { useSelector } from "react-redux";
 import type { Device } from "../api/client";
+import { selectNickname } from "../state/slices/devicesSlice";
+import type { RootState } from "../state/store";
 import StatusPill from "./StatusPill";
 import { T } from "../theme";
 
 export default function DeviceCard({ device }: { device: Device }) {
+  const nickname = useSelector((state: RootState) => selectNickname(state, device.id));
   const stripe = device.status === "quarantined" ? T.danger : T.jade;
+  const displayName = nickname ?? device.name;
 
   return (
     <View style={styles.card}>
@@ -14,7 +19,10 @@ export default function DeviceCard({ device }: { device: Device }) {
 
       <View style={styles.body}>
         <View style={styles.top}>
-          <Text style={styles.name} numberOfLines={1}>{device.name}</Text>
+          <View style={styles.nameBlock}>
+            <Text style={styles.name} numberOfLines={1}>{displayName}</Text>
+            <Text style={styles.ipLine}>{device.ip}</Text>
+          </View>
           <StatusPill status={(device.status as "normal" | "quarantined") || "normal"} />
         </View>
 
@@ -58,7 +66,9 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     gap: 10,
   },
-  name: { color: T.textPrimary, fontWeight: "700", fontSize: 16, flexShrink: 1 },
+  nameBlock: { flexShrink: 1 },
+  name: { color: T.textPrimary, fontWeight: "700", fontSize: 16 },
+  ipLine: { color: T.textMuted, fontSize: 12, marginTop: 2 },
   metaRow: { flexDirection: "row", gap: 10, marginTop: 3 },
   metaLabel: {
     color: T.textMuted,
