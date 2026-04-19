@@ -110,8 +110,14 @@ export default function DashboardScreen() {
   }
 
   return (
+    <View style={styles.root}>
+    <Image
+      source={require("../assets/OllinBX.png")}
+      style={styles.ollinArt}
+      resizeMode="contain"
+    />
     <ScrollView
-      style={styles.root}
+      style={styles.scrollView}
       contentContainerStyle={styles.content}
       refreshControl={
         <RefreshControl
@@ -143,18 +149,14 @@ export default function DashboardScreen() {
         <MetricCard label="HIGH SEVERITY"  value={String(highAlerts)}    accent={highAlerts > 0 ? T.dangerText : T.jadeText} />
         <MetricCard label="QUARANTINED"    value={String(quarantined)}   accent={quarantined > 0 ? T.dangerText : T.jadeText} />
       </View>
-
-      <Image
-        source={require("../assets/OllinBX.png")}
-        style={styles.ollinArt}
-        resizeMode="contain"
-      />
     </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: T.bgBase },
+  scrollView: { flex: 1 },
   content: { padding: 16, paddingBottom: 40 },
 
   systemCard: {
@@ -203,9 +205,11 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   ollinArt: {
-    width: "100%",
+    position: "absolute",
+    bottom: 40,
+    left: 0,
+    right: 0,
     height: 260,
-    marginTop: 28,
-    opacity: 0.9,
+    opacity: 0.15,
   },
 });
