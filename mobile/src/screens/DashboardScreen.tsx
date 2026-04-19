@@ -111,11 +111,6 @@ export default function DashboardScreen() {
 
   return (
     <View style={styles.root}>
-    <Image
-      source={require("../assets/OllinBX.png")}
-      style={styles.ollinArt}
-      resizeMode="contain"
-    />
     <ScrollView
       style={styles.scrollView}
       contentContainerStyle={styles.content}
@@ -150,6 +145,12 @@ export default function DashboardScreen() {
         <MetricCard label="QUARANTINED"    value={String(quarantined)}   accent={quarantined > 0 ? T.dangerText : T.jadeText} />
       </View>
     </ScrollView>
+    <Image
+      source={require("../assets/OllinBX.png")}
+      style={styles.ollinArt}
+      resizeMode="contain"
+      pointerEvents="none"
+    />
     </View>
   );
 }
