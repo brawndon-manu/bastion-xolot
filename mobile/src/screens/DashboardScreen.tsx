@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { View, Text, ScrollView, StyleSheet, RefreshControl } from "react-native";
+import { View, Text, ScrollView, StyleSheet, RefreshControl, Image } from "react-native";
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "../state/store";
 import { loadDevices } from "../state/slices/devicesSlice";
@@ -143,6 +143,12 @@ export default function DashboardScreen() {
         <MetricCard label="HIGH SEVERITY"  value={String(highAlerts)}    accent={highAlerts > 0 ? T.dangerText : T.jadeText} />
         <MetricCard label="QUARANTINED"    value={String(quarantined)}   accent={quarantined > 0 ? T.dangerText : T.jadeText} />
       </View>
+
+      <Image
+        source={require("../assets/OllinBX.png")}
+        style={styles.ollinArt}
+        resizeMode="contain"
+      />
     </ScrollView>
   );
 }
@@ -195,5 +201,11 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 1.2,
     marginTop: 6,
+  },
+  ollinArt: {
+    width: "100%",
+    height: 260,
+    marginTop: 28,
+    opacity: 0.9,
   },
 });
