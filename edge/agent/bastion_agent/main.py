@@ -42,7 +42,7 @@ from bastion_agent import mdns as mdns_listener
 from bastion_agent.dns_monitor import DnsMonitor
 from bastion_agent.flow_summary import collect_flow_summaries
 from bastion_agent.baseline import update_baseline
-from bastion_agent.anomaly import check_for_anomalies
+from bastion_agent.anomaly import check_for_anomalies, init_cooldowns
 from bastion_agent.gateway_probe_monitor import route_gateway_probe_signals
 from bastion_agent.events import dispatch_to_backend
 
@@ -219,6 +219,7 @@ async def _run() -> None:
     """Start all detection loops and wait for shutdown."""
 
     init_local_db()
+    init_cooldowns()
     _print_banner()
     mdns_listener.start()
 

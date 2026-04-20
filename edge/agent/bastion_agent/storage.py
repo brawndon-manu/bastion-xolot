@@ -67,6 +67,13 @@ CREATE TABLE IF NOT EXISTS flow_summaries (
     protocols       TEXT DEFAULT '[]'
 );
 
+CREATE TABLE IF NOT EXISTS alert_cooldowns (
+    mac        TEXT NOT NULL,
+    alert_type TEXT NOT NULL,
+    last_fired REAL NOT NULL,
+    PRIMARY KEY (mac, alert_type)
+);
+
 CREATE TABLE IF NOT EXISTS device_baselines (
     mac_address         TEXT PRIMARY KEY,
     connections_mean    REAL DEFAULT 0,
@@ -236,6 +243,26 @@ def mark_dns_blocks_alerted(row_ids: list[int]) -> None:
     get_conn().execute(
         f"UPDATE dns_blocks SET alerted = 1 WHERE id IN ({placeholders})",
         row_ids,
+    )
+    get_conn().commit()
+
+
+# ─────────────────────────────────────────────
+# Alert cooldowns (survive restarts)
+# ─────────────────────────────────────────────
+
+def load_cooldowns() -> dict[tuple[str, str], float]:
+    """Load persisted cooldown timestamps into a dict keyed by (mac, alert_type)."""
+    rows = get_conn().execute("SELECT mac, alert_type, last_fired FROM alert_cooldowns").fetchall()
+    return {(row["mac"], row["alert_type"]): row["last_fired"] for row in rows}
+
+
+def save_cooldown(mac: str, alert_type: str, last_fired: float) -> None:
+    """Upsert a cooldown entry."""
+    get_conn().execute(
+        "INSERT INTO alert_cooldowns (mac, alert_type, last_fired) VALUES (?, ?, ?)"
+        " ON CONFLICT(mac, alert_type) DO UPDATE SET last_fired=excluded.last_fired",
+        (mac, alert_type, last_fired),
     )
     get_conn().commit()
 

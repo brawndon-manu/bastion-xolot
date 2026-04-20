@@ -39,6 +39,7 @@ from bastion_agent.config import GATEWAY_IP
 from bastion_agent.detection import handle_event
 
 from bastion_agent.baseline import get_baseline, is_baseline_stable
+from bastion_agent.storage import load_cooldowns, save_cooldown
 from bastion_agent.events import (
     build_anomaly_detected,
     build_alert,
@@ -59,18 +60,30 @@ _NEW_DEST_HIGH = 40
 # Cooldown: seconds before the same alert type can fire again for the same device
 _ALERT_COOLDOWN_SECS = 3600
 
-# In-memory cooldown tracker: (mac, alert_type) → last fired timestamp
+# Cooldown tracker: (mac, alert_type) → last fired wall-clock timestamp.
+# Populated from DB at startup via init_cooldowns(); written through on every fire.
 _cooldown: dict[tuple[str, str], float] = {}
+
+
+def init_cooldowns() -> None:
+    """Load persisted cooldown state from the local DB. Call once at startup."""
+    _cooldown.update(load_cooldowns())
+    logger.info("Loaded %d alert cooldown entries from DB", len(_cooldown))
 
 
 def _is_on_cooldown(mac: str, alert_type: str) -> bool:
     key = (mac, alert_type)
     last = _cooldown.get(key, 0.0)
-    return (time.monotonic() - last) < _ALERT_COOLDOWN_SECS
+    return (time.time() - last) < _ALERT_COOLDOWN_SECS
 
 
 def _mark_cooldown(mac: str, alert_type: str) -> None:
-    _cooldown[(mac, alert_type)] = time.monotonic()
+    now = time.time()
+    _cooldown[(mac, alert_type)] = now
+    try:
+        save_cooldown(mac, alert_type, now)
+    except Exception:
+        logger.warning("Failed to persist cooldown for %s / %s", mac, alert_type)
 
 
 def _z_score(value: float, mean: float, stddev: float) -> float:
