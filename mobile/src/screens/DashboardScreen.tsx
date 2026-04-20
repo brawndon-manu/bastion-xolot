@@ -86,7 +86,7 @@ export default function DashboardScreen() {
   const quarantined  = useMemo(() => devices.filter((d) => d.status === "quarantined").length, [devices]);
 
   // Status visual config
-  let iconName: "check-circle" | "alert-circle" | "x-circle" = "x-circle";
+  let iconName: "alert-circle" | "x-circle" | null = "x-circle";
   let iconColor  = T.danger;
   let titleColor = T.dangerText;
   let titleText  = "SYSTEM OFFLINE";
@@ -94,7 +94,7 @@ export default function DashboardScreen() {
   let stepColor  = T.danger;
 
   if (systemState === "online") {
-    iconName   = "check-circle";
+    iconName   = null;
     iconColor  = T.jade;
     titleColor = T.jadeText;
     titleText  = "SYSTEM ONLINE";
@@ -130,7 +130,15 @@ export default function DashboardScreen() {
       <View style={styles.systemCard}>
         <AztecStepBorder color={stepColor} />
         <View style={styles.statusRow}>
-          <Icon name={iconName} size={28} color={iconColor} />
+          {iconName === null ? (
+            <Image
+              source={require("../assets/device_online_icon.png")}
+              style={{ width: 28, height: 28, tintColor: iconColor }}
+              resizeMode="contain"
+            />
+          ) : (
+            <Icon name={iconName} size={28} color={iconColor} />
+          )}
           <Text style={[styles.statusTitle, { color: titleColor }]}>{titleText}</Text>
         </View>
         <Text style={styles.statusSub}>{subText}</Text>
