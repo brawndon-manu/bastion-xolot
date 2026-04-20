@@ -1,13 +1,11 @@
 import React, { useEffect } from "react";
-import { StatusBar, View, Text } from "react-native";
+import { StatusBar, View, Text, Image } from "react-native";
 import { Provider, useDispatch, useSelector } from "react-redux";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { store, RootState, AppDispatch } from "./state/store";
 import { bootstrapAuth } from "./state/slices/authSlice";
-
-import Icon from "react-native-vector-icons/Feather";
 
 import OnboardingScreen from "./screens/OnboardingScreen";
 import DashboardScreen from "./screens/DashboardScreen";
@@ -75,7 +73,11 @@ function MainTabs() {
           ),
           tabBarLabel: "Dashboard",
           tabBarIcon: ({ focused, color }) => (
-            <Icon name="home" size={22} color={color} />
+            <Image
+              source={require("./assets/dashboard_icon.png")}
+              style={{ width: 24, height: 24, tintColor: color }}
+              resizeMode="contain"
+            />
           ),
         }}
       />
@@ -91,7 +93,11 @@ function MainTabs() {
           ),
           tabBarLabel: "Devices",
           tabBarIcon: ({ focused, color }) => (
-            <Icon name="monitor" size={22} color={color} />
+            <Image
+              source={require("./assets/devices_icon.png")}
+              style={{ width: 24, height: 24, tintColor: color }}
+              resizeMode="contain"
+            />
           ),
         }}
       />
@@ -107,7 +113,11 @@ function MainTabs() {
           ),
           tabBarLabel: "Alerts",
           tabBarIcon: ({ focused, color }) => (
-            <Icon name="alert-triangle" size={22} color={color} />
+            <Image
+              source={require("./assets/alert_icon.png")}
+              style={{ width: 24, height: 24, tintColor: color }}
+              resizeMode="contain"
+            />
           ),
         }}
       />
@@ -123,7 +133,11 @@ function MainTabs() {
           ),
           tabBarLabel: "Settings",
           tabBarIcon: ({ focused, color }) => (
-            <Icon name="settings" size={22} color={color} />
+            <Image
+              source={require("./assets/settings_icons.png")}
+              style={{ width: 24, height: 24, tintColor: color }}
+              resizeMode="contain"
+            />
           ),
         }}
       />
