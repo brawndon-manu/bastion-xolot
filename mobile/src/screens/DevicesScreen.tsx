@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useMemo } from "react";
 import { View, Text, FlatList, Pressable, StyleSheet, RefreshControl } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../App";
@@ -10,6 +10,17 @@ import { CompositeScreenProps } from "@react-navigation/native";
 import { BottomTabScreenProps } from "@react-navigation/bottom-tabs";
 import { api } from "../api/client";
 import { T } from "../theme";
+
+const ONLINE_THRESHOLD_MS = 5 * 60 * 1000;
+
+function MetricCard({ label, value, accent }: { label: string; value: string; accent: string }) {
+  return (
+    <View style={[styles.metricCard, { borderTopColor: accent, borderTopWidth: 2 }]}>
+      <Text style={[styles.metricValue, { color: accent }]}>{value}</Text>
+      <Text style={styles.metricLabel}>{label}</Text>
+    </View>
+  );
+}
 
 /*
  * Screen for viewing all devices on network — refresh and navigation to details.
@@ -23,6 +34,9 @@ type Props = CompositeScreenProps<
 export default function DevicesScreen({ navigation }: Props) {
   const dispatch = useDispatch<AppDispatch>();
   const { items, loading } = useSelector((state: RootState) => state.devices);
+
+  const onlineCount  = useMemo(() => items.filter((d) => Date.now() - new Date(d.lastSeen).getTime() < ONLINE_THRESHOLD_MS).length, [items]);
+  const offlineCount = useMemo(() => items.length - onlineCount, [items, onlineCount]);
 
   useEffect(() => {
     dispatch(loadDevices());
@@ -39,6 +53,10 @@ export default function DevicesScreen({ navigation }: Props) {
 
   return (
     <View style={styles.root}>
+      <View style={styles.metricsRow}>
+        <MetricCard label="ONLINE"  value={String(onlineCount)}  accent={T.jadeText} />
+        <MetricCard label="OFFLINE" value={String(offlineCount)} accent={T.textSecondary} />
+      </View>
       <FlatList
         data={items}
         keyExtractor={(device) => device.id}
@@ -63,6 +81,10 @@ export default function DevicesScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: T.bgBase },
+  metricsRow: { flexDirection: "row", gap: 10, paddingHorizontal: 16, paddingTop: 16 },
+  metricCard: { flex: 1, backgroundColor: T.bgCard, borderRadius: 12, padding: 16, alignItems: "center" },
+  metricValue: { fontSize: 36, fontWeight: "700", letterSpacing: -1 },
+  metricLabel: { fontSize: 11, color: T.textSecondary, letterSpacing: 1, marginTop: 4 },
   list: { padding: 16, gap: 10, paddingBottom: 24 },
   empty: { color: T.textSecondary, marginTop: 24, textAlign: "center", letterSpacing: 0.5 },
 });
