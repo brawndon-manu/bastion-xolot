@@ -33,6 +33,7 @@ Satisfies Requirement 1.6:
 
 import json
 import logging
+import time
 from datetime import datetime, timezone
 from bastion_agent.config import GATEWAY_IP
 from bastion_agent.detection import handle_event
@@ -51,9 +52,25 @@ _Z_LOW = 2.0
 _Z_MEDIUM = 3.0
 _Z_HIGH = 4.0
 
-# Maximum new destinations before flagging as suspicious
-_NEW_DEST_WARN = 3
-_NEW_DEST_HIGH = 8
+# Minimum new destinations before flagging as suspicious
+_NEW_DEST_WARN = 15
+_NEW_DEST_HIGH = 40
+
+# Cooldown: seconds before the same alert type can fire again for the same device
+_ALERT_COOLDOWN_SECS = 3600
+
+# In-memory cooldown tracker: (mac, alert_type) → last fired timestamp
+_cooldown: dict[tuple[str, str], float] = {}
+
+
+def _is_on_cooldown(mac: str, alert_type: str) -> bool:
+    key = (mac, alert_type)
+    last = _cooldown.get(key, 0.0)
+    return (time.monotonic() - last) < _ALERT_COOLDOWN_SECS
+
+
+def _mark_cooldown(mac: str, alert_type: str) -> None:
+    _cooldown[(mac, alert_type)] = time.monotonic()
 
 
 def _z_score(value: float, mean: float, stddev: float) -> float:
@@ -87,9 +104,16 @@ def _enforcement_for_severity(severity: str) -> dict | None:
         return {"state": "SOFT", "actor": "anomaly"}
     return None
 
-def _should_alert(severity: str) -> bool:
-    """Only medium and high anomalies should generate user-facing alerts."""
-    return severity in {"medium", "high"}
+def _should_alert(severity: str, mac: str = "", alert_type: str = "") -> bool:
+    """Only medium/high anomalies that aren't on cooldown generate user-facing alerts."""
+    if severity not in {"medium", "high"}:
+        return False
+    if mac and alert_type:
+        if _is_on_cooldown(mac, alert_type):
+            logger.debug("Alert suppressed (cooldown): %s / %s", mac, alert_type)
+            return False
+        _mark_cooldown(mac, alert_type)
+    return True
 
 
 def _confidence_from_z(z: float, severity: str) -> float:
@@ -154,7 +178,7 @@ def _check_volume_spike(
         enqueue_and_dispatch(event)
         events.append(event)
 
-        if _should_alert(severity):
+        if _should_alert(severity, mac, "volume_spike"):
             _route_to_detection(
                 mac,
                 severity,
@@ -230,7 +254,7 @@ def _check_connection_spike(
         enqueue_and_dispatch(event)
         events.append(event)
 
-        if _should_alert(severity):
+        if _should_alert(severity, mac, "connection_spike"):
             _route_to_detection(
                 mac,
                 severity,
@@ -303,6 +327,11 @@ def _check_unusual_destinations(
         severity = "medium"
     else:
         severity = "low"
+
+    if _is_on_cooldown(mac, "unusual_destinations"):
+        logger.debug("Alert suppressed (cooldown): %s / unusual_destinations", mac)
+        return events
+    _mark_cooldown(mac, "unusual_destinations")
 
     enforcement = _enforcement_for_severity(severity)
 
@@ -539,7 +568,7 @@ def _check_scan_probe(flow: dict, mac: str) -> list[dict]:
     enqueue_and_dispatch(event)
     events.append(event)
 
-    if _should_alert(severity):
+    if _should_alert(severity, mac, "scan_probe"):
         _route_to_detection(
             mac,
             severity,
