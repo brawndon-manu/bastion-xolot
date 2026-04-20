@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import { View, Text, FlatList, Pressable, StyleSheet, RefreshControl } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../App";
@@ -31,22 +31,33 @@ type Props = CompositeScreenProps<
   NativeStackScreenProps<RootStackParamList>
 >;
 
+const REFRESH_DEBOUNCE_MS = 60 * 1000;
+
 export default function DevicesScreen({ navigation }: Props) {
   const dispatch = useDispatch<AppDispatch>();
   const { items, loading } = useSelector((state: RootState) => state.devices);
+  const lastRefresh = useRef<number>(0);
 
   const sortedItems  = useMemo(() => [...items].sort((a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime()), [items]);
   const onlineCount  = useMemo(() => items.filter((d) => Date.now() - new Date(d.lastSeen).getTime() < ONLINE_THRESHOLD_MS).length, [items]);
   const offlineCount = useMemo(() => items.length - onlineCount, [items, onlineCount]);
 
+  const throttledRefresh = () => {
+    const now = Date.now();
+    if (now - lastRefresh.current < REFRESH_DEBOUNCE_MS) return;
+    lastRefresh.current = now;
+    dispatch(loadDevices());
+  };
+
   useEffect(() => {
     dispatch(loadDevices());
+    lastRefresh.current = Date.now();
 
     api.connectRealtime();
     const unsub = api.subscribe((event) => {
       if (!event) return;
       if (event.type === "ENFORCEMENT_UPDATED") dispatch(loadDevices());
-      if (event.type === "WS_EVENT" && event.event === "event.received") dispatch(loadDevices());
+      if (event.type === "WS_EVENT" && event.event === "event.received") throttledRefresh();
     });
 
     return () => { unsub(); };
