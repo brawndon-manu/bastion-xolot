@@ -163,7 +163,7 @@ function mapDevice(device: BackendDevice): Device
   }
   else
   {
-    hostname = device.hostname;
+    hostname = device.hostname.replace(/\.local\.?$/i, "");
   }
 
   let name = "";

@@ -7,6 +7,7 @@ the way Eero does — from the device's own self-announced name.
 """
 
 import logging
+import socket
 import threading
 from typing import Optional
 
@@ -28,8 +29,19 @@ def _update_cache(ip: str, hostname: str) -> None:
         return
     with _lock:
         if _cache.get(ip) != clean:
-            logger.debug("mDNS: %s → %s", ip, clean)
+            logger.info("mDNS: %s → %s", ip, clean)
             _cache[ip] = clean
+
+
+def _addr_bytes_to_ip(addr_bytes: bytes) -> Optional[str]:
+    try:
+        if len(addr_bytes) == 4:
+            return socket.inet_ntop(socket.AF_INET, addr_bytes)
+        if len(addr_bytes) == 16:
+            return socket.inet_ntop(socket.AF_INET6, addr_bytes)
+    except OSError:
+        pass
+    return None
 
 
 def start() -> None:
@@ -53,6 +65,12 @@ def start() -> None:
             "_printer._tcp.local.",
             "_smb._tcp.local.",
             "_device-info._tcp.local.",
+            "_srpl-tls._tcp.local.",
+            "_remotepairing._tcp.local.",
+            "_sleep-proxy._udp.local.",
+            "_eero._tcp.local.",
+            "_raop._tcp.local.",
+            "_homekit._tcp.local.",
         ]
 
         def on_service_state_change(zeroconf, service_type, name, state_change):
@@ -64,19 +82,15 @@ def start() -> None:
                     return
                 hostname = info.server or ""
                 for addr_bytes in info.addresses:
-                    import socket
-                    try:
-                        ip = socket.inet_ntoa(addr_bytes)
-                        if hostname:
-                            _update_cache(ip, hostname)
-                    except OSError:
-                        pass
+                    ip = _addr_bytes_to_ip(addr_bytes)
+                    if ip and hostname:
+                        _update_cache(ip, hostname)
             except Exception:
                 pass
 
         ServiceBrowser(zc, SERVICE_TYPES, handlers=[on_service_state_change])
         _started = True
-        logger.info("mDNS listener started")
+        logger.info("mDNS listener started — watching %d service types", len(SERVICE_TYPES))
 
     except ImportError:
         logger.warning("zeroconf not installed — mDNS hostname discovery disabled")
