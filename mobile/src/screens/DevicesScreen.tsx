@@ -35,6 +35,7 @@ export default function DevicesScreen({ navigation }: Props) {
   const dispatch = useDispatch<AppDispatch>();
   const { items, loading } = useSelector((state: RootState) => state.devices);
 
+  const sortedItems  = useMemo(() => [...items].sort((a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime()), [items]);
   const onlineCount  = useMemo(() => items.filter((d) => Date.now() - new Date(d.lastSeen).getTime() < ONLINE_THRESHOLD_MS).length, [items]);
   const offlineCount = useMemo(() => items.length - onlineCount, [items, onlineCount]);
 
@@ -58,7 +59,7 @@ export default function DevicesScreen({ navigation }: Props) {
         <MetricCard label="OFFLINE" value={String(offlineCount)} accent={T.textSecondary} />
       </View>
       <FlatList
-        data={items}
+        data={sortedItems}
         keyExtractor={(device) => device.id}
         refreshControl={
           <RefreshControl
