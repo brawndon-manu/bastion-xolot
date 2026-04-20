@@ -9,7 +9,8 @@ import { T } from "../theme";
 
 export default function DeviceCard({ device }: { device: Device }) {
   const nickname = useSelector((state: RootState) => selectNickname(state, device.id));
-  const stripe = device.status === "quarantined" ? T.danger : T.jade;
+  const isOnline = Date.now() - new Date(device.lastSeen).getTime() < 5 * 60 * 1000;
+  const stripe = device.status === "quarantined" ? T.danger : isOnline ? T.jade : T.textSecondary;
   const displayName = nickname ?? device.name;
 
   return (
