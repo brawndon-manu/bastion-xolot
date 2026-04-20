@@ -38,6 +38,7 @@ from bastion_agent.config import (
 )
 from bastion_agent.storage import init_local_db, get_pending_events, mark_events_dispatched
 from bastion_agent.discovery import scan_network
+from bastion_agent import mdns as mdns_listener
 from bastion_agent.dns_monitor import DnsMonitor
 from bastion_agent.flow_summary import collect_flow_summaries
 from bastion_agent.baseline import update_baseline
@@ -219,6 +220,7 @@ async def _run() -> None:
 
     init_local_db()
     _print_banner()
+    mdns_listener.start()
 
     tasks = [
         asyncio.create_task(discovery_loop(), name="discovery"),
