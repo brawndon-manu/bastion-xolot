@@ -356,7 +356,7 @@ eventsRouter.post("/", async (req, res) => {
             mac_address: event.mac_address,
             ip_address: event.ip_address,
             hostname: event.hostname,
-            vendor: event.vendor,
+            vendor: event.vendor as string | undefined,
         });
 
         // Process event through correlation engine.

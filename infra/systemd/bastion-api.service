@@ -1,0 +1,19 @@
+[Unit]
+Description=Bastion Xolot API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bastion
+Group=bastion
+WorkingDirectory=/home/bastion/bastion-xolot/backend
+EnvironmentFile=/home/bastion/bastion-xolot/.env
+ExecStart=/usr/bin/node dist/server.js
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
