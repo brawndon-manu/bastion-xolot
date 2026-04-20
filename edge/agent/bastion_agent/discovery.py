@@ -145,7 +145,10 @@ def scan_network() -> list[dict]:
         ip = entry["ip"]
 
         # mDNS first (device's self-announced name), fall back to reverse DNS
-        hostname = get_mdns_hostname(ip) or resolve_hostname(ip)
+        mdns_name = get_mdns_hostname(ip)
+        if mdns_name:
+            logger.info("mDNS hostname for %s: %s", ip, mdns_name)
+        hostname = mdns_name or resolve_hostname(ip)
 
         # OUI vendor lookup from MAC prefix
         vendor = lookup_vendor(mac)
