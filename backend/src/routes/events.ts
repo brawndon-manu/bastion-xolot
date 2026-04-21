@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { createAlert } from "../services/alert_service";
+import { buildAlertFingerprint, createAlert, findRecentActiveAlert, refreshAlert } from "../services/alert_service";
 import { ensureDeviceExists } from "../services/device_service";
 import { broadcast } from "../realtime/websocket";
 import { processEvent } from "../services/correlation_service";
@@ -330,13 +330,29 @@ eventsRouter.post("/", async (req, res) => {
     try {
         const directAlert = normalizeEdgeAlertPayload(req.body);
         if (directAlert.alert) {
+            const { device_id, severity, title, explanation } = directAlert.alert;
+            const fingerprint = buildAlertFingerprint([device_id, "edge_alert", title]);
+            const dedupWindowMs = 24 * 60 * 60 * 1000; // 24 hours — same condition shouldn't stack up all day
+            const existing = findRecentActiveAlert(device_id, fingerprint, Date.now() - dedupWindowMs);
+
+            if (existing) {
+                const refreshed = refreshAlert(existing.id, {
+                    explanation,
+                    evidence: JSON.stringify(req.body),
+                    confidence: Math.max(existing.confidence ?? 0, readOptionalNumber(req.body.confidence) ?? 0),
+                });
+                broadcast("alert.updated", refreshed);
+                return res.status(200).json({ alert: refreshed, accepted_as: "edge_alert" });
+            }
+
             const alert = createAlert({
-                device_id: directAlert.alert.device_id,
+                device_id,
                 type: "edge_alert",
-                severity: directAlert.alert.severity,
-                title: directAlert.alert.title,
-                explanation: directAlert.alert.explanation,
+                severity,
+                title,
+                explanation,
                 evidence: JSON.stringify(req.body),
+                fingerprint,
                 confidence: readOptionalNumber(req.body.confidence),
             });
 

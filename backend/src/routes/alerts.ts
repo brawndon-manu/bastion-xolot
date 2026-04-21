@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { listAlerts, getAlert, refreshAlert } from "../services/alert_service";
+import { getDb } from "../db/db";
 
 /**
  * Router responsible for alert retrieval endpoints.
@@ -87,6 +88,21 @@ alertsRouter.post("/:id/resolve", async (req, res) => {
 
     } catch (err) {
         console.error("Failed to resolve alert:", err);
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
+
+alertsRouter.post("/clear-active", async (req, res) => {
+    try {
+        const db = getDb();
+        const now = Date.now();
+        const result = db.prepare(`
+            UPDATE alerts SET status = 'resolved', updated_at = ?, resolved_at = ?
+            WHERE status = 'active'
+        `).run(now, now);
+        res.json({ cleared: result.changes });
+    } catch (err) {
+        console.error("Failed to clear active alerts:", err);
         res.status(500).json({ error: "Internal server error" });
     }
 });
