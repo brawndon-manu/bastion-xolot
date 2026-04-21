@@ -1,5 +1,5 @@
-import React from "react";
-import { View, Text, StyleSheet, Pressable, Image, ScrollView } from "react-native";
+import React, { useState } from "react";
+import { View, Text, StyleSheet, Pressable, Image, ScrollView, Alert } from "react-native";
 import { useDispatch } from "react-redux";
 import { AppDispatch } from "../state/store";
 import { signOut } from "../state/slices/authSlice";
@@ -7,6 +7,7 @@ import { CompositeScreenProps } from "@react-navigation/native";
 import { BottomTabScreenProps } from "@react-navigation/bottom-tabs";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { T } from "../theme";
+import { api } from "../api/client";
 
 type Props = CompositeScreenProps<
   BottomTabScreenProps<import("../App").MainTabParamList, "Settings">,
@@ -15,6 +16,32 @@ type Props = CompositeScreenProps<
 
 export default function SettingsScreen({ navigation }: Props) {
   const dispatch = useDispatch<AppDispatch>();
+  const [clearing, setClearing] = useState(false);
+
+  function handleClearAlerts() {
+    Alert.alert(
+      "Clear Active Alerts",
+      "This will resolve all active alerts. Use this to get a clean slate when testing.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clear",
+          style: "destructive",
+          onPress: async () => {
+            setClearing(true);
+            try {
+              const result = await api.clearActiveAlerts();
+              Alert.alert("Done", `Cleared ${result.cleared} active alert${result.cleared !== 1 ? "s" : ""}.`);
+            } catch {
+              Alert.alert("Error", "Failed to clear alerts.");
+            } finally {
+              setClearing(false);
+            }
+          },
+        },
+      ]
+    );
+  }
 
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
@@ -25,6 +52,16 @@ export default function SettingsScreen({ navigation }: Props) {
         onPress={() => navigation.navigate("Controls")}
       >
         <Text style={styles.btnText}>Controls & Enforcement History</Text>
+      </Pressable>
+
+      <Text style={styles.sectionLabel}>DEVELOPER</Text>
+
+      <Pressable
+        style={[styles.btn, styles.btnDanger, clearing && styles.btnDisabled]}
+        onPress={handleClearAlerts}
+        disabled={clearing}
+      >
+        <Text style={styles.btnText}>{clearing ? "Clearing…" : "Clear All Active Alerts"}</Text>
       </Pressable>
 
       <Text style={styles.sectionLabel}>ACCOUNT</Text>
@@ -69,6 +106,13 @@ const styles = StyleSheet.create({
   btnSignOut: {
     backgroundColor: T.bgCard,
     borderColor: T.borderDanger,
+  },
+  btnDanger: {
+    backgroundColor: T.bgCard,
+    borderColor: T.borderDanger,
+  },
+  btnDisabled: {
+    opacity: 0.5,
   },
   btnText: {
     color: T.textPrimary,
