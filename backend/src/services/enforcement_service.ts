@@ -63,11 +63,9 @@ function syncDesiredState(
         if (!obj.devices || typeof obj.devices !== "object") obj.devices = {};
 
         const now = new Date().toISOString();
-        if (state === "NONE") {
-            delete obj.devices[mac];
-        } else {
-            obj.devices[mac] = { state, reason, actor, updated_at: now };
-        }
+        // Keep NONE entries with actor intact so the reconcile loop can route
+        // operator-initiated deletes through the operator gate (bypasses monitor-only).
+        obj.devices[mac] = { state, reason, actor, updated_at: now };
         obj.updated_at = now;
 
         const tmp = filePath + ".tmp";
@@ -238,6 +236,10 @@ export function unquarantineDevice(
     recordAction(action);
 
     if (action.status === "applied") {
+        syncDesiredState(device_id, "NONE", "manual_release", initiatedBy);
+    } else if (initiatedBy === "operator") {
+        // Always sync on operator release — DB state may be stale but the nft set
+        // could still have the device blocked. Force the reconcile loop to clear it.
         syncDesiredState(device_id, "NONE", "manual_release", initiatedBy);
     }
 
