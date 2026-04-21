@@ -29,6 +29,7 @@ import { enforcementRouter } from "./routes/enforcement";
  * This guarantees the backend is fully operational at startup.
  */
 initDatabase();
+
 /**
  * ==============================
  * EXPRESS APPLICATION SETUP
@@ -70,11 +71,6 @@ app.use("/alerts", alertsRouter);
  * 
  * Endpoint:
  *  GET /health
- * 
- * Used for:
- *  - Monitoring system status
- *  - Debugging
- *  - Deployment verification
  */
 app.get("/health", (req, res) => {
 
@@ -90,7 +86,7 @@ app.get("/health", (req, res) => {
         status: "ok",                                                   // Indicates the service is running
         service: "bastion-backend",                                     // Name of the service (useful for monitoring tools)
         environment: config.NODE_ENV,                                   // Current environment (development, production, etc.)
-        monitor_only: runtimeState.monitorOnly,                          // Whether the system is in passive monitoring mode (no enforcement actions)
+        monitor_only: runtimeState.monitorOnly,                         // Whether the system is in passive monitoring mode (no enforcement actions)
         auto_quarantine_threshold: config.AUTO_QUARANTINE_THRESHOLD,    // Threshold value used to trigger automatic quarantine actions
         database: dbCheck.ok === 1 ? "ok" : "degraded",                 // Reports database health based on query result
         realtime: getRealtimeStatus(),                                  // Status of real-time system (e.g., WebSocket connections)
@@ -115,8 +111,6 @@ app.patch("/config", (req, res) => {
  * Prevents:
  *  - Server crashes
  *  - Leaking internal error details
- * 
- * NOTE: This should be the LAST middleware
  */
 app.use((req, res) => {
     res.status(404).json({ error: `Route not found: ${req.method} ${req.originalUrl}` });

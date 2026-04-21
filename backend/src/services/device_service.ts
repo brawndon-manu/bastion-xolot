@@ -117,9 +117,7 @@ export function touchDevice(id: string): void {
  * 
  * COALESCE(?, existing_value) means:
  *  - use the new value if provided
- *  - otherwise keep th current database value
- * 
- * This is useful because event payloads may only contain partial device info.
+ *  - otherwise keep the current database value
  */
 function updateDeviceDetails(id: string, data: DeviceInput): void {
     const db = getDb();
@@ -147,9 +145,6 @@ function updateDeviceDetails(id: string, data: DeviceInput): void {
  * Behavior:
  *  - if device already exists -> refresh details and return updated record
  *  - if device does not exist -> create it and return new record
- * 
- * This is a key integrity function because alerts, events, and enforcement
- * actions should always point to a known device.
  */
 export function ensureDeviceExists(data: DeviceInput): Device {
     const id = data.id || randomUUID();

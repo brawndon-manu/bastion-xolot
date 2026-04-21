@@ -34,9 +34,7 @@ type EdgeAlertPayload = Record<string, unknown> & {
     created_at?: string;
 };
 
-/**
- * Type guard to ensure a value is a plain object.
- */
+// Type guard to ensure a value is a plain object.
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -110,9 +108,7 @@ function normalizeEdgeAlertPayload(payload: unknown): { alert?: EdgeAlertPayload
     };
 }
 
-/**
- * Normalizes edge event names into the backend event types used by correlation.
- */
+// Normalizes edge event names into the backend event types used by correlation.
 function mapEventType(type: string): string {
     switch (type) {
         case "dns_blocked":
@@ -122,10 +118,7 @@ function mapEventType(type: string): string {
     }
 }
 
-/**
- * Detects the legacy Suricata adapter payload shape from main.
- * That adapter currently emits reason + severity + device_id_type, but no explicit type.
- */
+// Detects the legacy Suricata adapter payload shape from main.
 function inferEventType(payload: Record<string, unknown>, data: Record<string, unknown>): string | undefined {
     const explicitType = readOptionalString(payload.type);
     if (explicitType) {
@@ -153,6 +146,7 @@ function inferEventType(payload: Record<string, unknown>, data: Record<string, u
  *  - Enforces additional rules for specific event types
  */
 function normalizeEventPayload(payload: unknown): { event?: NormalizedEvent; error?: string } {
+    
     // Ensure payload is a valid object
     if (!isRecord(payload)) {
         return { error: "Event payload must be a JSON object" };
