@@ -2,6 +2,19 @@ import { createAsyncThunk, createSlice } from "@reduxjs/toolkit";
 import { api, Alert } from "../../api/client";
 import type { RootState } from "../store";
 
+const SEVERITY_RANK: Record<string, number> = { High: 0, Medium: 1, Low: 2 };
+
+function sortAlerts(alerts: Alert[]): Alert[] {
+  return [...alerts].sort((a, b) => {
+    const aResolved = a.status === "resolved" ? 1 : 0;
+    const bResolved = b.status === "resolved" ? 1 : 0;
+    if (aResolved !== bResolved) return aResolved - bResolved;
+    const sevDiff = (SEVERITY_RANK[a.severity] ?? 3) - (SEVERITY_RANK[b.severity] ?? 3);
+    if (sevDiff !== 0) return sevDiff;
+    return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+  });
+}
+
 type AlertsState = {
   items: Alert[];
   loading: boolean;
@@ -38,11 +51,13 @@ const alertsSlice = createSlice({
   initialState,
   reducers: {
     alertUpsert: (state, action) => {
-    upsertAlert(state.items, action.payload);
-      },
-      alertResolved: (state, action) => {
-    upsertAlert(state.items, action.payload);
-    }
+      upsertAlert(state.items, action.payload);
+      state.items = sortAlerts(state.items);
+    },
+    alertResolved: (state, action) => {
+      upsertAlert(state.items, action.payload);
+      state.items = sortAlerts(state.items);
+    },
   },
   extraReducers: (builder) => {
     builder.addCase(loadAlerts.pending, (state) => {
@@ -51,7 +66,7 @@ const alertsSlice = createSlice({
     });
     builder.addCase(loadAlerts.fulfilled, (state, action) => {
       state.loading = false;
-      state.items = action.payload;
+      state.items = sortAlerts(action.payload);
     });
     builder.addCase(loadAlerts.rejected, (state, action) => {
       state.loading = false;

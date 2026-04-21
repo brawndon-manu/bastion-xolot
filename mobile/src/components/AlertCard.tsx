@@ -4,34 +4,37 @@ import type { Alert } from "../api/client";
 import { T } from "../theme";
 
 export default function AlertCard({ alert }: { alert: Alert }) {
-  let stripe      = T.turquoise;
-  let accentText  = T.turquoiseText;
-  let accentBg    = T.pillNeutralBg;
-  let accentBorder = T.borderTurquoise;
+  const resolved = alert.status === "resolved";
 
-  if (alert.severity === "High") {
-    stripe       = T.danger;
-    accentText   = T.dangerText;
-    accentBg     = T.pillBadBg;
-    accentBorder = T.borderDanger;
-  } else if (alert.severity === "Medium") {
-    stripe       = T.warning;
-    accentText   = T.warningText;
-    accentBg     = T.pillWarnBg;
-    accentBorder = T.borderWarning;
+  let stripe       = resolved ? T.jade : T.turquoise;
+  let accentText   = resolved ? T.jadeText : T.turquoiseText;
+  let accentBg     = resolved ? T.pillOkBg : T.pillNeutralBg;
+  let accentBorder = resolved ? T.borderJade : T.borderTurquoise;
+
+  if (!resolved) {
+    if (alert.severity === "High") {
+      stripe       = T.danger;
+      accentText   = T.dangerText;
+      accentBg     = T.pillBadBg;
+      accentBorder = T.borderDanger;
+    } else if (alert.severity === "Medium") {
+      stripe       = T.warning;
+      accentText   = T.warningText;
+      accentBg     = T.pillWarnBg;
+      accentBorder = T.borderWarning;
+    }
   }
 
   return (
-    <View style={styles.card}>
-      {/* Severity accent stripe on left edge */}
+    <View style={[styles.card, resolved && styles.cardResolved]}>
       <View style={[styles.stripe, { backgroundColor: stripe }]} />
 
       <View style={styles.body}>
         <View style={styles.top}>
-          <Text style={styles.title} numberOfLines={2}>{alert.title}</Text>
+          <Text style={[styles.title, resolved && styles.titleResolved]} numberOfLines={2}>{alert.title}</Text>
           <View style={[styles.sevBadge, { backgroundColor: accentBg, borderColor: accentBorder }]}>
             <Text style={[styles.sevText, { color: accentText }]}>
-              {alert.severity.toUpperCase()}
+              {resolved ? "RESOLVED" : alert.severity.toUpperCase()}
             </Text>
           </View>
         </View>
@@ -68,6 +71,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 6,
   },
+  cardResolved: {
+    opacity: 0.55,
+  },
   stripe: { width: 4 },
   body: { flex: 1, padding: 14 },
   top: {
@@ -78,6 +84,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   title: { color: T.textPrimary, fontWeight: "700", fontSize: 15, flexShrink: 1, lineHeight: 20 },
+  titleResolved: { color: T.textSecondary },
   sevBadge: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8, borderWidth: 1 },
   sevText: { fontSize: 10, fontWeight: "800", letterSpacing: 0.8 },
 
