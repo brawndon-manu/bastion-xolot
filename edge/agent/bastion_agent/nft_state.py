@@ -45,20 +45,11 @@ def _run_nft_json(argv: list[str]) -> dict[str, Any]:
 
 def _extract_set_elements(nft_json: dict[str, Any]) -> set[str]:
     """
-    Extract ether_addr elements from `nft -j list set ...` output.
+    Extract ipv4_addr elements from `nft -j list set ...` output.
 
-    The JSON generally looks like:
-      {"nftables":[{"metainfo":...}, {"set": {..., "elem":[ ... ] }}]}
-
-    Each elem entry may appear as:
-      {"elem": {"val":"aa:bb:..."}}
-    or sometimes:
-      {"elem":"aa:bb:..."}
-    We handle both.
-
-    Returns normalized lowercase MAC strings.
+    Returns normalized IP address strings.
     """
-    macs: set[str] = set()
+    macs: set[str] = set()  # named macs for historical compat, holds IPs now
 
     items = nft_json.get("nftables")
     if not isinstance(items, list):

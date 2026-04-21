@@ -1,36 +1,36 @@
 from __future__ import annotations
 
+import ipaddress
 import os
 import subprocess
 from typing import Literal
 
-from bastion_agent.utils import normalize_mac, is_valid_mac
-
 Op = Literal["ADD_SOFT", "DEL_SOFT", "ADD_HARD", "DEL_HARD"]
 
 
-def _validate_mac(mac: str) -> str:
-    m = normalize_mac(mac)
-    if not is_valid_mac(m):
-        raise ValueError(f"invalid mac: {mac}")
-    return m
+def _validate_ip(ip: str) -> str:
+    try:
+        return str(ipaddress.IPv4Address(ip.strip()))
+    except ValueError:
+        raise ValueError(f"invalid ipv4 address: {ip}")
 
 
-def build_nft_command(op: Op, mac: str) -> list[str]:
+def build_nft_command(op: Op, ip: str) -> list[str]:
     """
     Translate a single planned op into a single nft command (argv list).
     No shell, no free-form input, no chain edits.
+    Sets are now ipv4_addr type — we match on IP not MAC.
     """
-    mac = _validate_mac(mac)
+    ip = _validate_ip(ip)
 
     if op == "ADD_SOFT":
-        return ["nft", "add", "element", "inet", "bastion", "quarantine_soft", "{", mac, "}"]
+        return ["nft", "add", "element", "inet", "bastion", "quarantine_soft", "{", ip, "}"]
     if op == "DEL_SOFT":
-        return ["nft", "delete", "element", "inet", "bastion", "quarantine_soft", "{", mac, "}"]
+        return ["nft", "delete", "element", "inet", "bastion", "quarantine_soft", "{", ip, "}"]
     if op == "ADD_HARD":
-        return ["nft", "add", "element", "inet", "bastion", "quarantine_hard", "{", mac, "}"]
+        return ["nft", "add", "element", "inet", "bastion", "quarantine_hard", "{", ip, "}"]
     if op == "DEL_HARD":
-        return ["nft", "delete", "element", "inet", "bastion", "quarantine_hard", "{", mac, "}"]
+        return ["nft", "delete", "element", "inet", "bastion", "quarantine_hard", "{", ip, "}"]
 
     raise ValueError(f"unknown op: {op}")
 

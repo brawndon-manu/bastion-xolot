@@ -95,6 +95,9 @@ const ANOMALY_RESOLUTION_WINDOW_MS = parseInt(
     10
 );
 
+const DESIRED_STATE_PATH = process.env.DESIRED_STATE_PATH ||
+    "/var/lib/bastion/enforcement/desired_state.json";
+
 export const config = Object.freeze({
     NODE_ENV,
     DB_PATH,
@@ -104,4 +107,5 @@ export const config = Object.freeze({
     AUTH_SECRET,
     ALERT_DEDUP_WINDOW_MS,
     ANOMALY_RESOLUTION_WINDOW_MS,
+    DESIRED_STATE_PATH,
 });
