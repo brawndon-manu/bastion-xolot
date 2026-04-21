@@ -94,9 +94,19 @@ export function quarantineDevice(
     // Prevent duplicate enforcement
     const alreadyQuarantined = device.status === "quarantined";
 
-    /**
-     * Build enforcement action object
-     */
+    const status = alreadyQuarantined ? "skipped" : monitorOnly ? "simulated" : "applied";
+
+    // Don't flood the log with repeated simulated entries — one per device per hour is enough
+    if (status === "simulated") {
+        const cutoff = Date.now() - 60 * 60 * 1000;
+        const recent = db.prepare(`
+            SELECT id FROM enforcement_actions
+            WHERE device_id = ? AND action = 'quarantine' AND status = 'simulated' AND created_at >= ?
+            LIMIT 1
+        `).get(device_id, cutoff);
+        if (recent) return null as unknown as EnforcementAction;
+    }
+
     const action: EnforcementAction = {
         id: randomUUID(),
         device_id,
@@ -105,14 +115,7 @@ export function quarantineDevice(
         initiated_by: options.initiated_by || "system",
         created_at: Date.now(),
         mode: monitorOnly ? "monitor_only" : "active",
-
-        /**
-         * Determine execution result:
-         *  - skipped -> already quarantined
-         *  - simulated -> monitor-only made
-         *  - Applied -> actual enforcement
-         */
-        status: alreadyQuarantined ? "skipped" : monitorOnly ? "simulated" : "applied",
+        status,
         evidence: options.evidence ?? null,
     };
 
