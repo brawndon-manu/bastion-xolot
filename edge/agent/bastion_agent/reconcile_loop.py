@@ -2,11 +2,14 @@ import time
 import traceback
 
 from bastion_agent.reconcile import reconcile_once
+from bastion_agent.storage import init_local_db
 
 INTERVAL = 10  # seconds
 
 
 def main():
+    init_local_db()
+
     while True:
         try:
             tx = reconcile_once()
