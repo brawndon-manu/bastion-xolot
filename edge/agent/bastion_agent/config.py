@@ -27,19 +27,17 @@ PROTECTED_MACS = set(
 # When true:
 # - detection still runs
 # - enforcement becomes no-op
+# Dynamically synced from the backend /health endpoint at runtime.
+# The hardcoded default is True (safe) until the first successful poll.
 MONITOR_ONLY = True
 
-# When true:
-# - enforcement prints commands instead of executing (for testing)
-# - simulate only, never enforce
-DRY_RUN = True
+# When true: enforcement prints commands instead of executing.
+# Set BASTION_DRY_RUN=false in .env to enable real enforcement.
+DRY_RUN = os.getenv("BASTION_DRY_RUN", "true").lower() not in ("false", "0", "no")
 
-# When false (default):
-# - enforcement is completely disabled
-# - prevents accidental blocking on first boot or misconfiguration
-# - must be explicitly set to True by a human operator
-# NOTE: This does NOT override MONITOR_ONLY or DRY_RUN
-ALLOW_ENFORCEMENT = False
+# Master enforcement gate — must be explicitly enabled via env var.
+# Set BASTION_ALLOW_ENFORCEMENT=true in .env to allow nft rules to fire.
+ALLOW_ENFORCEMENT = os.getenv("BASTION_ALLOW_ENFORCEMENT", "false").lower() in ("true", "1", "yes")
 
 
 # ═══════════════════════════════════════════
@@ -131,13 +129,44 @@ LOG_LEVEL = os.getenv("BASTION_LOG_LEVEL", "INFO")
 # Safety gate
 # ═══════════════════════════════════════════
 
+import threading
+import time as _time
+import urllib.request
+
+_monitor_only_lock = threading.Lock()
+_monitor_only_cache: bool = True  # fail-closed default
+_monitor_only_last_fetch: float = 0.0
+_MONITOR_ONLY_TTL = 30.0  # seconds between polls
+
+
+def get_monitor_only() -> bool:
+    """
+    Returns the current monitor-only state, synced from the backend /health
+    endpoint at most every 30 seconds. Falls back to True (safe) on error.
+    """
+    global _monitor_only_cache, _monitor_only_last_fetch
+    with _monitor_only_lock:
+        if _time.monotonic() - _monitor_only_last_fetch < _MONITOR_ONLY_TTL:
+            return _monitor_only_cache
+        try:
+            url = f"{BACKEND_URL}/health"
+            with urllib.request.urlopen(url, timeout=3) as resp:
+                import json as _json
+                data = _json.loads(resp.read())
+            _monitor_only_cache = bool(data.get("monitor_only", True))
+            _monitor_only_last_fetch = _time.monotonic()
+        except Exception:
+            pass  # keep cached value
+    return _monitor_only_cache
+
+
 def enforcement_allowed() -> bool:
     """
     Fail-closed safety gate: enforcement is denied unless ALL conditions
     are satisfied.  Prevents accidental blocking during setup, demos,
     or misconfiguration.
     """
-    if MONITOR_ONLY:
+    if get_monitor_only():
         return False
     if DRY_RUN:
         return False
@@ -150,5 +179,23 @@ def enforcement_allowed() -> bool:
     if not LAN_IFACE.strip() or not WAN_IFACE.strip():
         return False
 
+    return True
+
+
+def operator_enforcement_allowed() -> bool:
+    """
+    Looser gate for operator-initiated actions — bypasses monitor_only
+    but still requires hardware config and explicit ALLOW_ENFORCEMENT.
+    """
+    if DRY_RUN:
+        return False
+    if not ALLOW_ENFORCEMENT:
+        return False
+    if LAN_IFACE == WAN_IFACE:
+        return False
+    if LAN_IFACE == "CHANGE ME" or WAN_IFACE == "CHANGE ME":
+        return False
+    if not LAN_IFACE.strip() or not WAN_IFACE.strip():
+        return False
     return True
 
