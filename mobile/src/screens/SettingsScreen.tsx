@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, StyleSheet, Pressable } from "react-native";
+import { View, Text, StyleSheet, Pressable, Image, ScrollView } from "react-native";
 import { useDispatch } from "react-redux";
 import { AppDispatch } from "../state/store";
 import { signOut } from "../state/slices/authSlice";
@@ -17,7 +17,7 @@ export default function SettingsScreen({ navigation }: Props) {
   const dispatch = useDispatch<AppDispatch>();
 
   return (
-    <View style={styles.root}>
+    <ScrollView style={styles.root} contentContainerStyle={styles.content}>
       <Text style={styles.sectionLabel}>ENFORCEMENT</Text>
 
       <Pressable
@@ -35,12 +35,19 @@ export default function SettingsScreen({ navigation }: Props) {
       >
         <Text style={styles.btnText}>Sign Out</Text>
       </Pressable>
-    </View>
+
+      <Image
+        source={require("../assets/SUNstoneSettings.png")}
+        style={styles.settingsArt}
+        resizeMode="contain"
+      />
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, padding: 16, backgroundColor: T.bgBase },
+  root: { flex: 1, backgroundColor: T.bgBase },
+  content: { padding: 16, paddingBottom: 40 },
   sectionLabel: {
     color: T.textGold,
     fontSize: 11,
@@ -67,5 +74,10 @@ const styles = StyleSheet.create({
     color: T.textPrimary,
     fontWeight: "700",
     fontSize: 15,
+  },
+  settingsArt: {
+    width: "100%",
+    height: 260,
+    marginTop: 24,
   },
 });
