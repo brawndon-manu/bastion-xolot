@@ -83,9 +83,9 @@ if (NODE_ENV === "production") {
  * Object.freeze prevents accidental mutation at runtime
  * This is important for deterministic appliance behavior
  */
-// Deduplication window for alerts (default: 5 minutes)
+// Deduplication window for alerts (default: 30 minutes)
 const ALERT_DEDUP_WINDOW_MS = parseInt(
-    process.env.ALERT_DEDUP_WINDOW_MS || "300000",
+    process.env.ALERT_DEDUP_WINDOW_MS || "1800000",
     10
 );
 

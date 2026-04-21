@@ -128,7 +128,7 @@ function createBehavioralAlert(deviceId: string, anomaly: StoredAnomaly): AlertE
         explanation: `${explainSecurityEvent("anomaly", anomaly)} ${anomaly.summary}.`,
         evidence: anomaly.evidence,
         confidence: Math.min(0.99, anomaly.score / 50),
-        fingerprintParts: [anomaly.type, anomaly.summary],
+        fingerprintParts: [anomaly.type],
     });
 }
 

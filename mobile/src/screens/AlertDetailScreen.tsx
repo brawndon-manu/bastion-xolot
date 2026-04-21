@@ -5,6 +5,7 @@ import { RootStackParamList } from "../App";
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "../state/store";
 import { selectAlertById, loadAlerts, alertResolved } from "../state/slices/alertsSlice";
+import { selectDeviceById, selectNickname, loadDevices } from "../state/slices/devicesSlice";
 import Icon from "react-native-vector-icons/Feather";
 import PlainEnglishPanel from "../components/PlainEnglishPanel";
 import { api } from "../api/client";
@@ -27,10 +28,20 @@ export default function AlertDetailScreen({ route }: Props) {
     selectAlertById(state, route.params.alertId)
   );
   const [resolving, setResolving] = useState(false);
+  const device = useSelector((state: RootState) =>
+    alert ? selectDeviceById(state, alert.deviceId) : undefined
+  );
+  const nickname = useSelector((state: RootState) =>
+    alert ? selectNickname(state, alert.deviceId) : null
+  );
 
   useEffect(() => {
     if (!alert) dispatch(loadAlerts());
   }, [dispatch, alert]);
+
+  useEffect(() => {
+    if (alert && !device) dispatch(loadDevices());
+  }, [dispatch, alert, device]);
 
   const onResolve = async () => {
     if (!alert || alert.status === "resolved") return;
@@ -106,6 +117,16 @@ export default function AlertDetailScreen({ route }: Props) {
       </View>
 
       <Section title="ALERT SOURCE" body={alert.sourceLabel} />
+      {device && (
+        <Section
+          title="DEVICE"
+          body={[
+            nickname ? nickname : device.name,
+            "IP: " + device.ip,
+            "MAC: " + device.mac,
+          ].join("\n")}
+        />
+      )}
       <PlainEnglishPanel text={alert.plainEnglish} />
       <Section title="CORRELATION / SUPPORTING EVIDENCE" body={evidenceText} />
       <Section title="RECOMMENDED ACTION" body={recommendedAction} />

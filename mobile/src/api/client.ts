@@ -331,7 +331,11 @@ function mapEvidence(evidence: string | null): string[]
       }
       else if (typeof value === "object" && value !== null)
       {
-        result.push(label + ": details available");
+        const inner = Object.entries(value as Record<string, unknown>)
+          .filter(([, v]) => v !== null && v !== undefined && typeof v !== "object")
+          .map(([k, v]) => (evidenceLabelMap[k] || k) + ": " + String(v))
+          .join(" · ");
+        result.push(label + ": " + (inner || "details available"));
       }
       else
       {
