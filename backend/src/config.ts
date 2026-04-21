@@ -4,11 +4,6 @@
  * This module centralizes all runtime configuration for the backend service.
  * Nothing else in the codebase should read process.env directly.
  * 
- * Goals:
- *  - Works on Raspberry Pi and developer machines
- *  - Safe defaults
- *  - Single source of truth
- *  - Easy to audit for security
  */
 
 import path from "path";
@@ -44,7 +39,6 @@ const DB_PATH =
  * HTTP server port.
  * 
  * Default: 3000
- * Can be overriden for testing or container deployment.
  */
 const API_PORT = parseInt(process.env.API_PORT || "3000", 10);
 const MONITOR_ONLY = process.env.MONITOR_ONLY !== "false";
@@ -54,11 +48,7 @@ const AUTO_QUARANTINE_THRESHOLD = parseInt(
 );
 
 /**
- * Secret used for signing authentication tokens
- * 
- * IMPORTANT:
- * In production this MUST be set via environment variable.
- * Never hardcode secrets in source code 
+ * Secret used for signing authentication tokens 
  */
 const AUTH_SECRET = 
     process.env.AUTH_SECRET ||
