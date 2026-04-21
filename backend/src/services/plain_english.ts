@@ -69,7 +69,9 @@ export async function generateAIExplanation(
 
         const block = message.content[0];
         if (block.type === "text") {
-            return block.text.trim();
+            return block.text
+                .replace(/^#+\s.*\n?/gm, "")
+                .trim();
         }
         return null;
     } catch (err) {
