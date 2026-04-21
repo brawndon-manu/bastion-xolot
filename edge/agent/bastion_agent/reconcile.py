@@ -44,7 +44,12 @@ def _desired_membership() -> Dict[str, set[str]]:
 
 
 def _operator_ips() -> set[str]:
-    """Return IPs whose desired state was set by an operator (bypass monitor-only)."""
+    """
+    Return IPs whose last desired-state change was operator-initiated.
+
+    Includes NONE-state entries so that operator-triggered releases also
+    route through the operator gate (bypassing monitor-only).
+    """
     obj = state.load_desired_state()
     ips: set[str] = set()
     for mac, info in (obj.get("devices") or {}).items():
