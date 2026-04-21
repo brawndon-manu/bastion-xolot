@@ -88,6 +88,8 @@ const ANOMALY_RESOLUTION_WINDOW_MS = parseInt(
 const DESIRED_STATE_PATH = process.env.DESIRED_STATE_PATH ||
     "/var/lib/bastion/enforcement/desired_state.json";
 
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || undefined;
+
 export const config = Object.freeze({
     NODE_ENV,
     DB_PATH,
@@ -98,4 +100,5 @@ export const config = Object.freeze({
     ALERT_DEDUP_WINDOW_MS,
     ANOMALY_RESOLUTION_WINDOW_MS,
     DESIRED_STATE_PATH,
+    ANTHROPIC_API_KEY,
 });

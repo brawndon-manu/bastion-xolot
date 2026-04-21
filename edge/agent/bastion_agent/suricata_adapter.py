@@ -1,46 +1,41 @@
 """
-Bastión Xólot — Suricata IDS Adapter (OPTIONAL Enhancement — STUB)
+Bastión Xólot — Suricata IDS Adapter
 
-STATUS: Not yet implemented. This is an optional enhancement that can
-be added if Suricata is deployed alongside the gateway.
-
-This module would read Suricata's EVE JSON log output and convert
-IDS alerts into Bastión Xólot events for correlation with the
-metadata-based detection pipeline.
+Reads Suricata's EVE JSON log and converts IDS alerts into Bastión
+events for the correlation pipeline.
 
 Suricata EVE log format:
-  - JSON-lines format (one JSON object per line)
-  - Located at /var/log/suricata/eve.json by default
-  - Event types: alert, dns, http, flow, stats, etc.
+  - JSON-lines at /var/log/suricata/eve.json
+  - event_type == "alert" lines only
 
-Integration points:
-  - Suricata alerts → bastion alerts (severity mapping)
-  - Suricata DNS events → enrichment for dns_monitor
-  - Suricata flow events → enrichment for flow_summary
-
-NOTE: Suricata installation and configuration is owned by the
-      Systems Architect (infra/scripts/setup_suricata.sh).
+File offset is tracked between calls so each cycle only ingests new lines.
 """
 
+import json
 import logging
 
+from bastion_agent.utils import new_uuid, utcnow_iso
+
 logger = logging.getLogger(__name__)
+
+# Tracks how far into eve.json we've already read
+_eve_log_offset: int = 0
 
 
 def parse_eve_log(log_path: str = "/var/log/suricata/eve.json") -> list[dict]:
     """
-    Minimal implementation:
-    - Reads alert events from file
-    - Parses Suricata alert events
-    - Returns normalized Bastion events
+    Read new Suricata alert events since the last call.
+
+    Returns a list of normalized Bastion event dicts ready for enqueue_event().
     """
+    global _eve_log_offset
 
-    import json
-
-    events = []
+    events: list[dict] = []
 
     try:
         with open(log_path, "r") as f:
+            f.seek(_eve_log_offset)
+
             for line in f:
                 if not line.strip():
                     continue
@@ -48,45 +43,49 @@ def parse_eve_log(log_path: str = "/var/log/suricata/eve.json") -> list[dict]:
                 try:
                     data = json.loads(line)
                 except json.JSONDecodeError:
-                    logger.warning("Skipping invalid JSON line in EVE log")
+                    logger.warning("Skipping malformed JSON line in EVE log")
                     continue
 
-                # Only handle Suricata alert events
                 if data.get("event_type") != "alert":
                     continue
 
                 alert = data.get("alert", {})
 
                 if data.get("src_mac"):
-                    device_id = data.get("src_mac")
+                    device_id = data["src_mac"]
                     device_id_type = "mac"
                 elif data.get("src_ip"):
-                    device_id = data.get("src_ip")
+                    device_id = data["src_ip"]
                     device_id_type = "ip"
                 else:
                     continue
 
-                # Map Suricata severity to Bastion severity
-                sev_map = {
-                    1: "high",
-                    2: "medium",
-                    3: "low"
-                }
-
+                sev_map = {1: "high", 2: "medium", 3: "low"}
                 severity = sev_map.get(alert.get("severity"), "low")
 
-                event = {
+                events.append({
+                    "id": new_uuid(),
+                    "type": "ids_alert",
+                    "timestamp": data.get("timestamp", utcnow_iso()),
+                    "source": "suricata",
                     "device_id": device_id,
                     "device_id_type": device_id_type,
                     "severity": severity,
-                    "reason": alert.get("signature", "suricata alert")
-                }
+                    "signature": alert.get("signature", ""),
+                    "reason": alert.get("signature", "suricata alert"),
+                    "category": alert.get("category", ""),
+                    "signature_id": alert.get("signature_id"),
+                    "src_ip": data.get("src_ip"),
+                    "dest_ip": data.get("dest_ip"),
+                    "dest_port": data.get("dest_port"),
+                    "proto": data.get("proto"),
+                })
 
-                events.append(event)
+            _eve_log_offset = f.tell()
 
     except FileNotFoundError:
-        logger.warning(f"EVE log not found: {log_path}")
-    except Exception as e:
-        logger.error(f"Failed to parse EVE log: {e}")
+        logger.warning("EVE log not found: %s", log_path)
+    except Exception:
+        logger.exception("Failed to parse EVE log")
 
     return events
