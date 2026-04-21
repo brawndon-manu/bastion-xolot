@@ -8,18 +8,14 @@ import {
  // Create a new Express router for enforcement-related endpoints
 export const enforcementRouter = Router();
 
-/**
- * Represenets the normalized structure of an enforcement request.
- */
+// Represenets the normalized structure of an enforcement request.
 type EnforcementRequest = {
     reason: string;             // Reason for enforcement (e.g., policy_violation)
     initiated_by: string;       // Who initiated the action (default: operator)
     evidence: string | null;    // Optional supporting evidence (stored as JSON string)
 };
 
-/**
- * Type gaurd to ensure a value is a plain object (not null or an array).
- */
+// Type gaurd to ensure a value is a plain object (not null or an array).
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -118,9 +114,7 @@ enforcementRouter.post("/quarantine/:id", handleQuarantine);
 // Likely added for backward compatibility or mistake
 enforcementRouter.post("/quaratine/:id", handleQuarantine);
 
-/**
- * Handles releasing (unquarantining) a device
- */
+// Handles releasing (unquarantining) a device
 enforcementRouter.post("/release/:id", async (req, res) => {
     try {
         const request = normalizeEnforcementRequest(req.body, "manual_release");
@@ -134,9 +128,7 @@ enforcementRouter.post("/release/:id", async (req, res) => {
     }
 });
 
-/**
- * Retrieves enforcement history.
- */
+// Retrieves enforcement history.
 enforcementRouter.get("/history", (req, res) => {
     try {
         const history = listEnforcementActions();

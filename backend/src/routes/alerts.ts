@@ -115,7 +115,6 @@ alertsRouter.get("/:id", async (req, res) => {
         /**
          * Basic input validation.
          * Prevents unnecessary database queries and undefined behavior.
-         * UUID validation will be added in later phases
          */
         if (!id) {
             return res.status(400).json({ error: "Missing alert id"});

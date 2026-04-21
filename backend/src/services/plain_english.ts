@@ -5,9 +5,6 @@
  *  - raw detection logic (correlation engine)
  *  - user-facing explanations (mobile app / UI)
  * 
- * Goal:
- *  Make security alerts understandable to non-technical users.
- * 
  * Used by:
  *  - correlation_service when creating alerts
  *  - enforcement logic (monitor-only explanations)
@@ -42,7 +39,7 @@ export function explainSecurityEvent(type: string, data: any): string {
             return "The system detected unusual network behavior from a device.";
 
         /**
-         * IDS alert (e.g., Suricata)
+         * IDS alert
          * 
          * Uses optional signature field to provide more context.
          * Example:
@@ -55,7 +52,7 @@ export function explainSecurityEvent(type: string, data: any): string {
          * Correlated threat
          * 
          * Indicates multiple signals (events + anomalies) agree,
-         * increasing confidence that this is a real threat.
+         * increasing confidence that this is a real threat
          */
         case "correlated_threat":
             return "Multiple signals agree that this device is behaving suspiciously, increasing confidence that the activity is real.";
@@ -64,7 +61,7 @@ export function explainSecurityEvent(type: string, data: any): string {
          * Monitor-only enforcement
          * 
          * Device would normally be quarantined, but system is in
-         * monitor-only mode (no actual enforcement applied).
+         * monitor-only mode (no actual enforcement applied)
          */
         case "enforcement.monitor_only":
             return "The device crossed the enforcement threshold, but the gateway is in monitor-only mode so no block was applied.";
@@ -72,7 +69,7 @@ export function explainSecurityEvent(type: string, data: any): string {
         /**
          * Default fallback
          * 
-         * Used when event type is unknown or not yet implemented.
+         * Used when event type is unknown or not yet implemented
          */
         default:
             return "Suspicious network activity was detected.";

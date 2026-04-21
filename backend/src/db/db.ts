@@ -36,13 +36,7 @@ export function initDatabase() {
     // Open SQLite database (creates file if it doesn't exist)
     db = new Database(dbPath);
 
-    /**
-     * Enable Write-Ahead Logging (WAL)
-     * 
-     * Benefits:
-     *  - Better performance for concurrent reads/writes
-     *  - Reduced risk of corruption on crash
-     */
+    // Enable Write-Ahead Logging (WAL)
     db.pragma("journal_mode = WAL");
 
     /**
@@ -82,7 +76,7 @@ export function initDatabase() {
  * This ensures the backend works reliably across:
  *  - local development
  *  - compiled builds
- *  - deployment environments (e.g., Raspberry Pi)
+ *  - deployment environments
  */
 function resolveSchemaPath(): string {
     /**
@@ -99,21 +93,14 @@ function resolveSchemaPath(): string {
         path.join(process.cwd(), "src/db/schema.sql"),
     ];
 
-    /**
-     * Iterate through candidates and return the first valid file
-     */
+    // Iterate through candidates and return the first valid file
     for (const candidate of candidates) {
         if (fs.existsSync(candidate)) {
             return candidate;
         }
     }
 
-    /**
-     * If no valid path is found, throw a descriptive error
-     * 
-     * This helps debugging deployment issues quickly by showing
-     * exactly which paths were checked.
-     */
+    // If no valid path is found, throw an error
     throw new Error(`Unable to locate schema.sql. Checked: ${candidates.join(", ")}`);
 }
 
@@ -121,7 +108,6 @@ function resolveSchemaPath(): string {
  * Loads the base schema from schema.sql
  * 
  * This creates tables if they do not exist.
- * Safe to run multiple times due to IF NOT EXISTS usage.
  */
 function initializeSchema() {
     const schemaPath = resolveSchemaPath();
@@ -203,11 +189,6 @@ export function getDb() {
  * 
  * Example usage:
  * run("INSERT INTO devices VALUES (?, ?)", [id, mac])
- * 
- * Centralizing DB access allows:
- *  - future logging of queries
- *  - performance monitoring
- *  - easier refactoring if DB changes
  */
 export function run(query: string, params: any[] = []) {
     return getDb().prepare(query).run(params);

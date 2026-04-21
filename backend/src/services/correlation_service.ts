@@ -30,16 +30,16 @@ import { config } from "../config";
  *  - Frontend updates
  */
 type CorrelationResult = {
-    event: StoredEvent;                 // Persisted event record
-    duplicate?: boolean;                // Boolean for duplicate
-    alert?: AlertRecord;                // Most recent alert (for convenience)
-    alerts: AlertRecord[];              // Active alerts generated or refreshed during processing
-    resolved_alerts?: AlertRecord[];    // Alerts resolved during lifecycle cleanup
-    anomaly?: StoredAnomaly;            // Behavioral anomaly (if detected)
-    resolved_anomalies?: StoredAnomaly[]; // Anomalies resolved during lifecycle cleanup
-    enforcement?: unknown;              // Enforcement action (quarantine, etc.)
-    risk_score?: number;                // Updated device risk score
-    device?: any;                       // Updated device state
+    event: StoredEvent;                     // Persisted event record
+    duplicate?: boolean;                    // Boolean for duplicate
+    alert?: AlertRecord;                    // Most recent alert (for convenience)
+    alerts: AlertRecord[];                  // Active alerts generated or refreshed during processing
+    resolved_alerts?: AlertRecord[];        // Alerts resolved during lifecycle cleanup
+    anomaly?: StoredAnomaly;                // Behavioral anomaly (if detected)
+    resolved_anomalies?: StoredAnomaly[];   // Anomalies resolved during lifecycle cleanup
+    enforcement?: unknown;                  // Enforcement action (quarantine, etc.)
+    risk_score?: number;                    // Updated device risk score
+    device?: any;                           // Updated device state
 };
 
 type AlertEmission = {
@@ -226,9 +226,9 @@ export async function processEvent(event: Record<string, unknown>, deviceId: str
         };
     }
 
-    let riskDelta = 0;                      // Risk score increment
+    let riskDelta = 0;                          // Risk score increment
     const alertEmissions: AlertEmission[] = []; // Alerts generated during processing
-    let enforcement: unknown = null;        // Enforcement action (if triggered)
+    let enforcement: unknown = null;            // Enforcement action (if triggered)
     const now = Date.now();
 
     /**

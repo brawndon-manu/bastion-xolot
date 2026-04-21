@@ -32,9 +32,7 @@ export type MetadataSummary = {
     created_at: number;
 };
 
-/**
- * Simple rolling baseline for device behavior.
- */
+// Simple rolling baseline for device behavior.
 export type DeviceBaseline = {
     device_id: string;
     avg_flow_count: number;
@@ -44,9 +42,7 @@ export type DeviceBaseline = {
     updated_at: number;
 };
 
-/**
- * Stored anomaly produced from baseline deviation.
- */
+// Stored anomaly produced from baseline deviation.
 export type StoredAnomaly = {
     id: string;
     device_id: string;
@@ -74,9 +70,7 @@ export type EventIngestionResult = {
     anomaly?: StoredAnomaly;
 };
 
-/**
- * Accept epoch millis or parseable date strings; otherwise fall back to now.
- */
+// Accept epoch millis or parseable date strings; otherwise fall back to now.
 function toTimestamp(value: unknown): number {
     if (typeof value === "number" && Number.isFinite(value)) {
         return value;
@@ -90,9 +84,7 @@ function toTimestamp(value: unknown): number {
     return Date.now();
 }
 
-/**
- * Normalizes numeric inputs used by flow summaries.
- */
+// Normalizes numeric inputs used by flow summaries.
 function toPositiveNumber(value: unknown, fallback = 0): number {
     if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
         return value;
@@ -114,9 +106,7 @@ function getEventById(id: string): StoredEvent | undefined {
     `).get(id) as StoredEvent | undefined;
 }
 
-/**
- * Converts an arbitrary event payload into the normalized metrics we baseline against.
- */
+// Converts an arbitrary event payload into the normalized metrics we baseline against.
 function deriveMetadataSummary(event: Record<string, unknown>, storedEvent: StoredEvent): MetadataSummary {
     const destination =
         event.destination ??
@@ -174,9 +164,7 @@ function insertMetadataSummary(summary: MetadataSummary): void {
     );
 }
 
-/**
- * Inserts a new event, or returns the existing record if the event ID was replayed.
- */
+// Inserts a new event, or returns the existing record if the event ID was replayed.
 function insertEvent(rawEvent: Record<string, unknown>, deviceId: string): { event: StoredEvent; duplicate: boolean } {
     const db = getDb();
     const event: StoredEvent = {
@@ -217,9 +205,7 @@ function getBaseline(deviceId: string): DeviceBaseline | undefined {
     `).get(deviceId) as DeviceBaseline | undefined;
 }
 
-/**
- * Updates the device baseline with a rolling average.
- */
+// Updates the device baseline with a rolling average.
 function upsertBaseline(summary: MetadataSummary): DeviceBaseline {
     const db = getDb();
     const existing = getBaseline(summary.device_id);
@@ -450,9 +436,7 @@ export function resolveStaleAnomalies(deviceId: string, olderThan: number): Stor
     }));
 }
 
-/**
- * Used by correlation to look back for IDS or connection context around a device.
- */
+// Used by correlation to look back for IDS or connection context around a device.
 export function getRecentEventsByTypes(
     deviceId: string,
     types: string[],

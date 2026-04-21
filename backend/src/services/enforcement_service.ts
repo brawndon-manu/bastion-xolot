@@ -12,11 +12,6 @@ import path from "path";
  * This is the audit record for all response actions:
  *  - quarantine
  *  - unquarantine
- * 
- * Important for:
- *  - auditing
- *  - debugging
- *  - UI display
  */
 export type EnforcementAction = {
     id: string;                                     // Unique action ID
@@ -30,9 +25,7 @@ export type EnforcementAction = {
     evidence: string | null;                        // Supporting content (JSON)
 };
 
-/**
- * Optional metadata passed when triggering enforcement
- */
+// Optional metadata passed when triggering enforcement
 type EnforcementOptions = {
     initiated_by?: string;
     evidence?: string | null;
@@ -63,8 +56,9 @@ function syncDesiredState(
         if (!obj.devices || typeof obj.devices !== "object") obj.devices = {};
 
         const now = new Date().toISOString();
+
         // Keep NONE entries with actor intact so the reconcile loop can route
-        // operator-initiated deletes through the operator gate (bypasses monitor-only).
+        // operator-initiated deletes through the operator gate
         obj.devices[mac] = { state, reason, actor, updated_at: now };
         obj.updated_at = now;
 
@@ -72,7 +66,6 @@ function syncDesiredState(
         fs.writeFileSync(tmp, JSON.stringify(obj), "utf8");
         fs.renameSync(tmp, filePath);
     } catch (err) {
-        // Non-fatal — DB is the source of truth, desired_state is best-effort
         console.error("Failed to sync desired_state.json:", err);
     }
 }
@@ -131,7 +124,8 @@ export function quarantineDevice(
     }
 
     const initiatedBy = options.initiated_by || "system";
-    // Monitor-only only suppresses automatic system actions — operator always enforces
+
+    // Monitor-only only suppresses automatic system actions
     const monitorOnly = config.MONITOR_ONLY && initiatedBy !== "operator";
 
     // Prevent duplicate enforcement
@@ -139,7 +133,7 @@ export function quarantineDevice(
 
     const status = alreadyQuarantined ? "skipped" : monitorOnly ? "simulated" : "applied";
 
-    // Don't flood the log with repeated system-triggered simulated entries — one per device per hour is enough
+    // Don't flood the log with repeated system-triggered simulated entries
     if (status === "simulated" && initiatedBy === "system") {
         const cutoff = Date.now() - 60 * 60 * 1000;
         const recent = db.prepare(`

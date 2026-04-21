@@ -13,14 +13,10 @@ let wss: WebSocketServer | null = null;
 /**
  * Initialize WebSocket server
  * 
- * Attaches WebSocket server to the existing HTTP server.
- * This allows:
- *  - REST API and WebSocket to share the same port
- *  - Simpler deployment (single service)
- * 
- * Called once during server startup 
+ * Attaches WebSocket server to the existing HTTP server. 
  */
 export function initWebSocket(server: Server) {
+    
     // Create WebSocket server bound to HTTP server
     wss = new WebSocketServer({ server });
 
@@ -57,13 +53,9 @@ export function initWebSocket(server: Server) {
  *  - alert.created
  *  - device.quarantined
  *  - device.risk.updated
- * 
- * This enables:
- *  - Live dashboards
- *  - Instant mobile notifications
- *  - Real-time threat visibility
  */
 export function broadcast(event: string, payload: unknown) {
+    
     // Safety check: ensure WebSocket is initialized
     if (!wss) {
         console.warn("WebSocket broadcast attempted before initialization");
@@ -94,14 +86,7 @@ export function broadcast(event: string, payload: unknown) {
     }
 }
 
-/**
- * Returns current WebSocket server status
- * 
- * Useful for:
- *  - Debugging
- *  - Health checks
- *  - Monitoring system state
- */
+// Returns current WebSocket server status
 export function getRealtimeStatus() {
     return {
         initialized: wss !== null,              // Whether WebSocket server is running
