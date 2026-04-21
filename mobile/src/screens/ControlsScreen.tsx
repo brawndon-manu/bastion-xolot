@@ -147,25 +147,33 @@ export default function ControlsScreen() {
           <Text style={styles.empty}>No enforcement actions yet.</Text>
         )}
 
-        {history.map((item) => (
-          <View key={item.id} style={styles.historyItem}>
-            {/* Aztec accent stripe */}
-            <View style={styles.historyStripe} />
-            <View style={styles.historyContent}>
-              <Text style={styles.historyAction}>
-                {item.action.toUpperCase()}
-              </Text>
-              <Text style={styles.historyDevice}>{item.deviceId}</Text>
-              <Text style={styles.historyMeta}>Reason: {item.reason}</Text>
-              <Text style={styles.historyMeta}>By: {item.initiatedBy}  ·  Mode: {item.mode}</Text>
-              <Text style={styles.historyMeta}>Status: {item.status}</Text>
-              {item.evidence && <Text style={styles.historyMeta}>Evidence: present</Text>}
-              <Text style={styles.historyTime}>
-                {new Date(item.timestamp).toLocaleString()}
-              </Text>
+        {history.map((item) => {
+          const device = devices.find((d) => d.id === item.deviceId);
+          const deviceLabel = device ? device.name : item.deviceId;
+          const simulated = item.status === "simulated";
+          return (
+            <View key={item.id} style={[styles.historyItem, simulated && styles.historyItemSimulated]}>
+              <View style={[styles.historyStripe, { backgroundColor: simulated ? T.textMuted : item.action === "unquarantine" ? T.jade : T.danger }]} />
+              <View style={styles.historyContent}>
+                <View style={styles.historyTopRow}>
+                  <Text style={[styles.historyAction, simulated && styles.historyActionSimulated]}>
+                    {item.action === "unquarantine" ? "RELEASED" : "QUARANTINE"}
+                  </Text>
+                  {simulated && (
+                    <View style={styles.simulatedBadge}>
+                      <Text style={styles.simulatedBadgeText}>SIMULATED</Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={[styles.historyDevice, simulated && styles.textMuted]}>{deviceLabel}</Text>
+                <Text style={[styles.historyMeta, simulated && styles.textMuted]}>
+                  {item.reason.replace(/_/g, " ")}  ·  {item.initiatedBy}
+                </Text>
+                <Text style={styles.historyTime}>{new Date(item.timestamp).toLocaleString()}</Text>
+              </View>
             </View>
-          </View>
-        ))}
+          );
+        })}
       </View>
     </ScrollView>
   );
@@ -260,26 +268,49 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: T.borderSubtle,
   },
+  historyItemSimulated: {
+    opacity: 0.45,
+  },
   historyStripe: {
     width: 3,
     borderRadius: 2,
-    backgroundColor: T.gold,
-    opacity: 0.6,
     alignSelf: "stretch",
   },
   historyContent: { flex: 1 },
+  historyTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 2,
+  },
   historyAction: {
-    color: T.jadeText,
+    color: T.dangerText,
     fontWeight: "800",
     fontSize: 13,
     letterSpacing: 1,
-    marginBottom: 2,
+  },
+  historyActionSimulated: {
+    color: T.textMuted,
+  },
+  simulatedBadge: {
+    backgroundColor: "rgba(120,120,128,0.15)",
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: T.borderSubtle,
+  },
+  simulatedBadgeText: {
+    color: T.textMuted,
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 0.8,
   },
   historyDevice: {
     color: T.textPrimary,
     fontWeight: "600",
     fontSize: 13,
-    marginBottom: 4,
+    marginBottom: 2,
   },
   historyMeta: {
     color: T.textSecondary,
@@ -289,6 +320,9 @@ const styles = StyleSheet.create({
   historyTime: {
     color: T.textMuted,
     fontSize: 11,
-    marginTop: 4,
+    marginTop: 2,
+  },
+  textMuted: {
+    color: T.textMuted,
   },
 });
