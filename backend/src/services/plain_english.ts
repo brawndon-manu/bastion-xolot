@@ -1,77 +1,79 @@
+import Anthropic from "@anthropic-ai/sdk";
+import { config } from "../config";
+import { logger } from "../utils/logger";
+
+let _client: Anthropic | null = null;
+
+function getClient(): Anthropic | null {
+    if (!config.ANTHROPIC_API_KEY) return null;
+    if (!_client) {
+        _client = new Anthropic({ apiKey: config.ANTHROPIC_API_KEY });
+    }
+    return _client;
+}
+
 /**
- * Converts techinal security data into human-readable explanation
- * 
- * This function acts as the "translation layer" between:
- *  - raw detection logic (correlation engine)
- *  - user-facing explanations (mobile app / UI)
- * 
- * Used by:
- *  - correlation_service when creating alerts
- *  - enforcement logic (monitor-only explanations)
+ * Converts technical security data into human-readable explanation.
+ * Used as a synchronous fallback when AI is unavailable.
  */
 export function explainSecurityEvent(type: string, data: any): string {
     switch (type) {
-
-        /**
-         * DNS block event
-         * 
-         * Triggered when a device attempts to resolve or acess
-         * a domain that is known to be malicious or blocked.
-         */
         case "dns_block":
             return "A device on your network attempted to access a blocked or suspicious domain.";
-
-        /**
-         * Traffic spike anomaly
-         * 
-         * Indicates abnormal network usage compared to baseline behavior
-         */
         case "traffic_spike":
             return "A device generated unusually high network activity compared to its normal behavior.";
-        
-        /**
-         * Generic anomaly detection
-         * 
-         * Used when behavior deviates from expected patterns,
-         * but does not match a specific rule.
-         */
         case "anomaly":
             return "The system detected unusual network behavior from a device.";
-
-        /**
-         * IDS alert
-         * 
-         * Uses optional signature field to provide more context.
-         * Example:
-         *  "ET MALWARE Command and Control"
-         */
         case "ids_alert":
             return `The gateway IDS flagged this traffic as suspicious${data?.signature ? ` (${data.signature})` : ""}.`;
-
-        /**
-         * Correlated threat
-         * 
-         * Indicates multiple signals (events + anomalies) agree,
-         * increasing confidence that this is a real threat
-         */
         case "correlated_threat":
             return "Multiple signals agree that this device is behaving suspiciously, increasing confidence that the activity is real.";
-
-        /**
-         * Monitor-only enforcement
-         * 
-         * Device would normally be quarantined, but system is in
-         * monitor-only mode (no actual enforcement applied)
-         */
         case "enforcement.monitor_only":
             return "The device crossed the enforcement threshold, but the gateway is in monitor-only mode so no block was applied.";
-
-        /**
-         * Default fallback
-         * 
-         * Used when event type is unknown or not yet implemented
-         */
         default:
             return "Suspicious network activity was detected.";
+    }
+}
+
+/**
+ * Calls the Claude API to generate a plain-English alert explanation.
+ *
+ * Returns null if ANTHROPIC_API_KEY is not configured or the call fails.
+ * The caller should fall back to explainSecurityEvent() in that case.
+ */
+export async function generateAIExplanation(
+    alertType: string,
+    severity: string,
+    title: string,
+    evidence: Record<string, unknown>
+): Promise<string | null> {
+    const client = getClient();
+    if (!client) return null;
+
+    try {
+        const message = await client.messages.create({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 120,
+            messages: [
+                {
+                    role: "user",
+                    content:
+                        `You are a home network security assistant. Write 1-2 sentences explaining this alert to a non-technical homeowner. Be specific about what happened and why it matters. No jargon, no bullet points.\n\n` +
+                        `Alert type: ${alertType}\n` +
+                        `Severity: ${severity}\n` +
+                        `Title: ${title}\n` +
+                        `Evidence: ${JSON.stringify(evidence)}`,
+                },
+            ],
+        });
+
+        const block = message.content[0];
+        if (block.type === "text") {
+            return block.text.trim();
+        }
+        return null;
+    } catch (err) {
+        logger.warn("AI explanation generation failed", { error: String(err) });
+        return null;
     }
 }

@@ -9,7 +9,7 @@ import {
 import { getDevice, updateDeviceRisk } from "./device_service";
 import { quarantineDevice } from "./enforcement_service";
 import { broadcast } from "../realtime/websocket";
-import { explainSecurityEvent } from "./plain_english";
+import { explainSecurityEvent, generateAIExplanation } from "./plain_english";
 import {
     getRecentAnomalies,
     getRecentEventsByTypes,
@@ -189,6 +189,35 @@ function createCorrelatedThreatAlert(
             idsEvidence.map((signal) => signal.id).join(","),
         ],
     });
+}
+
+/**
+ * Fire-and-forget: asks Claude to rewrite a template explanation in plain English
+ * and patches the stored alert when the response arrives.
+ */
+async function upgradeAlertExplanation(
+    alertId: string,
+    alertType: string,
+    severity: string,
+    title: string,
+    evidence: string | null
+): Promise<void> {
+    let evidenceData: Record<string, unknown> = {};
+    if (evidence) {
+        try {
+            evidenceData = JSON.parse(evidence);
+        } catch {
+            evidenceData = { raw: evidence };
+        }
+    }
+
+    const aiExplanation = await generateAIExplanation(alertType, severity, title, evidenceData);
+    if (!aiExplanation) return;
+
+    const updated = refreshAlert(alertId, { explanation: aiExplanation });
+    if (updated) {
+        broadcast("alert.updated", updated);
+    }
 }
 
 /**
@@ -419,6 +448,18 @@ export async function processEvent(event: Record<string, unknown>, deviceId: str
      */
     for (const emission of alertEmissions) {
         broadcast(emission.created ? "alert.created" : "alert.updated", emission.alert);
+
+        // For brand-new alerts, kick off an async AI explanation upgrade.
+        // It resolves in the background and broadcasts alert.updated when done.
+        if (emission.created) {
+            upgradeAlertExplanation(
+                emission.alert.id,
+                emission.alert.type,
+                emission.alert.severity,
+                emission.alert.title,
+                emission.alert.evidence,
+            );
+        }
     }
 
     for (const resolvedAlert of resolvedAlerts) {
