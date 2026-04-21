@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, Switch, ScrollView } from "react-native";
+import { View, Text, StyleSheet, Switch, ScrollView, Pressable, Alert } from "react-native";
 import { useDispatch, useSelector } from "react-redux";
 import { RootState, AppDispatch } from "../state/store";
 import { setMonitorOnly } from "../state/slices/settingsSlice";
@@ -16,6 +16,32 @@ export default function ControlsScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const quarantinedDevices = devices.filter((d) => d.status === "quarantined");
+  const [releasing, setReleasing] = useState<string | null>(null);
+
+  const handleRelease = (deviceId: string, deviceName: string) => {
+    Alert.alert(
+      "Release Device",
+      `Remove ${deviceName} from quarantine?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Release",
+          onPress: async () => {
+            setReleasing(deviceId);
+            try {
+              await api.unquarantineDevice(deviceId);
+              dispatch(loadDevices());
+              loadHistory();
+            } catch {
+              Alert.alert("Error", "Failed to release device.");
+            } finally {
+              setReleasing(null);
+            }
+          },
+        },
+      ]
+    );
+  };
 
   const loadHistory = async () => {
     try {
@@ -93,9 +119,20 @@ export default function ControlsScreen() {
         ) : (
           quarantinedDevices.map((device) => (
             <View key={device.id} style={styles.deviceRow}>
-              <Text style={styles.deviceName}>{device.name}</Text>
-              <Text style={styles.deviceMeta}>Risk score: {device.riskScore}</Text>
-              <Text style={styles.deviceMeta}>Status: {device.status}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.deviceName}>{device.name}</Text>
+                <Text style={styles.deviceMeta}>Risk score: {device.riskScore}</Text>
+                <Text style={styles.deviceMeta}>{device.ip !== "—" ? device.ip : device.mac}</Text>
+              </View>
+              <Pressable
+                style={[styles.releaseBtn, releasing === device.id && styles.releaseBtnDisabled]}
+                onPress={() => handleRelease(device.id, device.name)}
+                disabled={releasing === device.id}
+              >
+                <Text style={styles.releaseBtnText}>
+                  {releasing === device.id ? "Releasing…" : "Release"}
+                </Text>
+              </Pressable>
             </View>
           ))
         )}
@@ -180,9 +217,12 @@ const styles = StyleSheet.create({
 
   // Quarantined device row
   deviceRow: {
+    flexDirection: "row",
+    alignItems: "center",
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: T.borderSubtle,
+    gap: 12,
   },
   deviceName: {
     color: T.textPrimary,
@@ -194,6 +234,22 @@ const styles = StyleSheet.create({
     color: T.textSecondary,
     fontSize: 13,
     marginTop: 1,
+  },
+  releaseBtn: {
+    backgroundColor: T.pillOkBg,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: T.borderJade,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  releaseBtnDisabled: {
+    opacity: 0.5,
+  },
+  releaseBtnText: {
+    color: T.jadeText,
+    fontWeight: "700",
+    fontSize: 13,
   },
 
   // History item
