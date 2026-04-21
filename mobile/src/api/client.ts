@@ -574,6 +574,10 @@ export const api = {
     return mapAlert(row);
   },
 
+  clearActiveAlerts: async (): Promise<{ cleared: number }> => {
+    return httpPost<{ cleared: number }>("/alerts/clear-active");
+  },
+
   /**
    * Requests manual quarantine of a device
    */
