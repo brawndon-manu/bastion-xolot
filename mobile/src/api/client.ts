@@ -256,10 +256,9 @@ function mapSourceLabel(type: string): "Behavioral" | "IDS" | "Correlated" | "DN
 }
 
 /**
- * Converts backend evidence keys into labels for displaying
+ * Converts backend evidence keys into human-readable display labels
  */
 const evidenceLabelMap: { [key: string]: string } = {
-  device_id: "Device ID",
   ip: "IP Address",
   ip_address: "IP Address",
   mac_address: "MAC Address",
@@ -274,78 +273,94 @@ const evidenceLabelMap: { [key: string]: string } = {
   flow_count: "Flow Count",
   total_bytes: "Total Bytes",
   unique_destinations: "Unique Destinations",
+  avg_flow_count: "Avg Flow Count",
+  avg_total_bytes: "Avg Total Bytes",
+  avg_unique_destinations: "Avg Unique Destinations",
+  sample_count: "Sample Count",
+  blocked_dns: "Blocked DNS",
+  suspicious_connections: "Suspicious Connections",
+  ids_alerts: "IDS Alerts",
   risk_score: "Risk Score",
   status: "Status",
   reason: "Reason",
   severity: "Severity",
   confidence: "Confidence",
   summary: "Summary",
-  created_at: "Created At",
-  updated_at: "Updated At",
-  resolved_at: "Resolved At",
+  previousBaseline: "Previous Baseline",
   event: "Event",
   anomalies: "Anomalies",
   ids_context: "IDS Context"
 };
 
+const EVIDENCE_SKIP_KEYS = new Set([
+  "id", "device_id", "source_event_id",
+  "window_start", "window_end",
+  "created_at", "updated_at", "resolved_at"
+]);
+
+function isEpochMs(v: unknown): v is number {
+  return typeof v === "number" && v > 1_000_000_000_000;
+}
+
+function isUuid(v: unknown): boolean {
+  return typeof v === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+}
+
+function formatScalar(v: unknown): string | null {
+  if (v === null || v === undefined) return null;
+  if (isUuid(v)) return null;
+  if (isEpochMs(v)) return new Date(v).toLocaleString();
+  if (typeof v === "number" && !Number.isInteger(v)) return v.toFixed(1);
+  return String(v);
+}
+
 /**
- * Converts raw backend evidence into array of readable strings for display
+ * Converts raw backend evidence into an array of readable strings.
+ * Each entry gets its own ◆ bullet in the UI.
  */
-function mapEvidence(evidence: string | null): string[] 
+function mapEvidence(evidence: string | null): string[]
 {
-  
-  if (!evidence)
-  {
-    return [];
-  }
+  if (!evidence) { return []; }
 
   try {
-    let parsed = JSON.parse(evidence);
+    const parsed = JSON.parse(evidence);
 
-    if (Array.isArray(parsed)) 
-    {
-      let result: string[] = [];
-      
-      for(const item of parsed)
-      {
-        result.push(String(item));
+    if (Array.isArray(parsed)) {
+      return parsed.map(String);
+    }
+
+    if (parsed && typeof parsed === "object") {
+      const result: string[] = [];
+
+      for (const key in parsed) {
+        if (EVIDENCE_SKIP_KEYS.has(key)) continue;
+
+        const label = evidenceLabelMap[key] || key;
+        const value = parsed[key];
+
+        if (Array.isArray(value)) {
+          result.push(label + ": " + value.length + " item(s)");
+        } else if (typeof value === "object" && value !== null) {
+          for (const innerKey in value as Record<string, unknown>) {
+            if (EVIDENCE_SKIP_KEYS.has(innerKey)) continue;
+            const innerLabel = evidenceLabelMap[innerKey] || innerKey;
+            const formatted = formatScalar((value as any)[innerKey]);
+            if (formatted !== null) {
+              result.push(label + " · " + innerLabel + ": " + formatted);
+            }
+          }
+        } else {
+          const formatted = formatScalar(value);
+          if (formatted !== null) {
+            result.push(label + ": " + formatted);
+          }
+        }
       }
 
       return result;
     }
 
-    if (parsed && typeof parsed === "object")
-    {
-      let result: string[] = [];
-
-      for (let key in parsed)
-      {
-      
-      let label = evidenceLabelMap[key] || key;
-
-      let value = parsed[key];
-
-      if (Array.isArray(value))
-      {
-        result.push(label + ": " + value.length + " item(s)");
-      }
-      else if (typeof value === "object" && value !== null)
-      {
-        const inner = Object.entries(value as Record<string, unknown>)
-          .filter(([, v]) => v !== null && v !== undefined && typeof v !== "object")
-          .map(([k, v]) => (evidenceLabelMap[k] || k) + ": " + String(v))
-          .join(" · ");
-        result.push(label + ": " + (inner || "details available"));
-      }
-      else
-      {
-        result.push(label + ": " + String(value));
-      }
-
-      }
-      return result;
-    }
-  
     return [String(parsed)];
   } 
   catch (error) 
