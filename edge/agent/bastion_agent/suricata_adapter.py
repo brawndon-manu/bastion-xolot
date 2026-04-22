@@ -71,9 +71,9 @@ def _is_recent_duplicate(event: dict) -> bool:
     return False
 
 
-# Tracks how far into eve.json we've already read.
+# Tracks how far into eve.json already read.
 # This is process-local; on a fresh agent start we intentionally begin at EOF
-# so historical Suricata noise does not flood the backend queue.
+# so historical Suricata noise does not flood the backend queue
 _eve_log_offset: int = 0
 _eve_log_initialized: bool = False
 
