@@ -169,6 +169,27 @@ function applyMigrations() {
         SET updated_at = COALESCE(updated_at, created_at),
             resolved_at = CASE WHEN status = 'resolved' THEN COALESCE(resolved_at, updated_at, created_at) ELSE resolved_at END
     `);
+
+    // Clamp legacy rows created before backend risk scores were bounded.
+    db.exec(`
+        UPDATE devices
+        SET risk_score = MIN(MAX(COALESCE(risk_score, 0), 0), 100)
+    `);
+
+    // Reclassify noisy IDS signatures that older code stored as high severity.
+    db.exec(`
+        UPDATE alerts
+        SET severity = 'low',
+            confidence = MIN(COALESCE(confidence, 0.45), 0.45),
+            updated_at = COALESCE(updated_at, created_at)
+        WHERE type = 'ids_alert'
+          AND LOWER(COALESCE(severity, '')) = 'high'
+          AND (
+              LOWER(COALESCE(title, '')) LIKE '%suricata stream%'
+              OR LOWER(COALESCE(title, '')) LIKE '%et info %'
+              OR LOWER(COALESCE(title, '')) LIKE '%observed %'
+          )
+    `);
 }
 
 /**
