@@ -4,9 +4,9 @@ import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../App";
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "../state/store";
-import { selectDeviceById, selectNickname, loadDevices, setNickname } from "../state/slices/devicesSlice";
+import { selectDeviceById, selectNickname, loadDevices, setNickname, deviceUpdated } from "../state/slices/devicesSlice";
 import StatusPill from "../components/StatusPill";
-import { api } from "../api/client";
+import { api, DeviceRole } from "../api/client";
 import { T } from "../theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "DeviceDetail">;
@@ -125,6 +125,41 @@ export default function DeviceDetailScreen({ route }: Props) {
             <Text style={styles.editHint}>{nickname ? "Edit" : "+"}</Text>
           </Pressable>
         )}
+      </View>
+
+      {/* Role picker */}
+      <Text style={styles.sectionLabel}>DEVICE ROLE</Text>
+      <View style={styles.card}>
+        {(
+          [
+            { role: "unknown",        label: "Unknown",        color: T.turquoise,    border: T.borderTurquoise },
+            { role: "workstation",    label: "Workstation",    color: T.jade,         border: T.borderJade      },
+            { role: "iot",            label: "IoT Device",     color: T.warning,      border: T.borderWarning   },
+            { role: "infrastructure", label: "Infrastructure", color: T.gold,         border: T.borderGold      },
+          ] as { role: DeviceRole; label: string; color: string; border: string }[]
+        ).map(({ role, label, color, border }, i, arr) => {
+          const selected = device.role === role;
+          return (
+            <React.Fragment key={role}>
+              <Pressable
+                style={styles.roleRow}
+                onPress={async () => {
+                  if (selected) return;
+                  try {
+                    const updated = await api.updateDeviceRole(device.id, role);
+                    dispatch(deviceUpdated(updated));
+                  } catch (err: any) {
+                    Alert.alert("Error", err?.message ?? "Failed to update role.");
+                  }
+                }}
+              >
+                <View style={[styles.roleDot, { backgroundColor: selected ? color : "transparent", borderColor: selected ? color : T.borderSubtle }]} />
+                <Text style={[styles.roleLabel, selected && { color, fontWeight: "700" }]}>{label}</Text>
+              </Pressable>
+              {i < arr.length - 1 && <View style={styles.divider} />}
+            </React.Fragment>
+          );
+        })}
       </View>
 
       {/* Info card */}
@@ -259,6 +294,23 @@ const styles = StyleSheet.create({
   saveBtnText: { color: "#000", fontWeight: "800", fontSize: 13 },
   cancelBtn: { paddingHorizontal: 8, paddingVertical: 8 },
   cancelBtnText: { color: T.textMuted, fontSize: 13 },
+
+  roleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 13,
+    gap: 12,
+  },
+  roleDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 1.5,
+  },
+  roleLabel: {
+    color: T.textSecondary,
+    fontSize: 14,
+  },
 
   // Action button
   actionBtn: {

@@ -192,6 +192,44 @@ def enforcement_allowed() -> bool:
     return True
 
 
+_device_roles_lock = threading.Lock()
+_device_roles_cache: dict[str, str] = {}
+_device_roles_last_fetch: float = 0.0
+_DEVICE_ROLES_TTL = 60.0  # seconds between polls
+
+
+def get_device_role(mac: str) -> str:
+    """
+    Returns the operator-assigned role for a device MAC address.
+
+    Checks PROTECTED_MACS first (always infrastructure regardless of backend).
+    Falls back to 'unknown' if the device isn't in the backend or the poll fails.
+    Refreshes the full device role cache at most every 60 seconds.
+    """
+    global _device_roles_cache, _device_roles_last_fetch
+
+    if mac.lower() in {m.lower() for m in PROTECTED_MACS}:
+        return "infrastructure"
+
+    with _device_roles_lock:
+        if _time.monotonic() - _device_roles_last_fetch >= _DEVICE_ROLES_TTL:
+            try:
+                url = f"{BACKEND_URL}/devices"
+                with urllib.request.urlopen(url, timeout=5) as resp:
+                    import json as _json
+                    devices = _json.loads(resp.read())
+                _device_roles_cache = {
+                    d["mac_address"].lower(): d.get("role", "unknown")
+                    for d in devices
+                    if d.get("mac_address")
+                }
+                _device_roles_last_fetch = _time.monotonic()
+            except Exception:
+                pass  # keep cached value
+
+    return _device_roles_cache.get(mac.lower(), "unknown")
+
+
 def operator_enforcement_allowed() -> bool:
     """
     Looser gate for operator-initiated actions — bypasses monitor_only

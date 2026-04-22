@@ -8,12 +8,69 @@ import { AppDispatch, RootState } from "../state/store";
 import { deviceSeen, loadDevices } from "../state/slices/devicesSlice";
 import { CompositeScreenProps } from "@react-navigation/native";
 import { BottomTabScreenProps } from "@react-navigation/bottom-tabs";
-import { api, ONLINE_THRESHOLD_MS, parseTimestamp } from "../api/client";
+import { api, Device, ONLINE_THRESHOLD_MS, parseTimestamp } from "../api/client";
 import { T } from "../theme";
 
 const getDeviceTimestamp = (d: any): number => {
   return d.lastSeenMs || parseTimestamp(d.lastSeen) || parseTimestamp(d.last_seen) || 0;
 };
+
+function compareIps(a: string, b: string): number {
+  const aParts = a.split(".").map(Number);
+  const bParts = b.split(".").map(Number);
+  for (let i = 0; i < 4; i++) {
+    const diff = (aParts[i] ?? 0) - (bParts[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+function sortNamedThenIp(devices: Device[], nicknames: Record<string, string>): Device[] {
+  const named: Device[] = [];
+  const ipOnly: Device[] = [];
+
+  for (const d of devices) {
+    if (nicknames[d.id] || d.hostname) {
+      named.push(d);
+    } else {
+      ipOnly.push(d);
+    }
+  }
+
+  named.sort((a, b) => {
+    const nameA = (nicknames[a.id] ?? a.hostname ?? a.ip).toLowerCase();
+    const nameB = (nicknames[b.id] ?? b.hostname ?? b.ip).toLowerCase();
+    return nameA.localeCompare(nameB);
+  });
+
+  ipOnly.sort((a, b) => compareIps(a.ip, b.ip));
+
+  return [...named, ...ipOnly];
+}
+
+function sortDevices(
+  devices: Device[],
+  nicknames: Record<string, string>,
+  latestSeenInData: number
+): Device[] {
+  const online: Device[] = [];
+  const offline: Device[] = [];
+
+  for (const d of devices) {
+    const ts = getDeviceTimestamp(d);
+    const isOnline = latestSeenInData > 0 && latestSeenInData - ts < ONLINE_THRESHOLD_MS;
+    if (isOnline) {
+      online.push(d);
+    } else {
+      offline.push(d);
+    }
+  }
+
+  return [
+    ...sortNamedThenIp(online, nicknames),
+    ...sortNamedThenIp(offline, nicknames),
+  ];
+}
 
 function MetricCard({ label, value, accent }: { label: string; value: string; accent: string }) {
   return (
@@ -37,30 +94,25 @@ const REFRESH_DEBOUNCE_MS = 60 * 1000;
 
 export default function DevicesScreen({ navigation }: Props) {
   const dispatch = useDispatch<AppDispatch>();
-  const { items, loading } = useSelector((state: RootState) => state.devices);
+  const { items, loading, nicknames } = useSelector((state: RootState) => state.devices);
   const lastRefresh = useRef<number>(0);
 
-  const sortedItems = useMemo(() => {
-    return [...items].sort((a, b) => getDeviceTimestamp(b) - getDeviceTimestamp(a));
+  const latestSeenInData = useMemo(() => {
+    const timestamps = items.map(getDeviceTimestamp).filter((t) => t > 0);
+    return timestamps.length > 0 ? Math.max(...timestamps) : 0;
   }, [items]);
+
+  const sortedItems = useMemo(() => {
+    return sortDevices(items, nicknames, latestSeenInData);
+  }, [items, nicknames, latestSeenInData]);
 
   const onlineCount = useMemo(() => {
-    if (items.length === 0) return 0;
-
-    const timestamps = items.map(getDeviceTimestamp).filter((t) => t > 0);
-    if (timestamps.length === 0) return 0;
-
-    // Relative 'Now' reference:
-    // We use the freshest 'lastSeen' in the entire dataset as the baseline for 'now'.
-    // This allows the app to stay accurate even if the system clock (2026) is shifted.
-    const latestSeenInData = Math.max(...timestamps);
-
+    if (latestSeenInData === 0) return 0;
     return items.filter((d) => {
       const ts = getDeviceTimestamp(d);
-      // Device is online if seen within 10 minutes of the most recent network activity
       return latestSeenInData - ts < ONLINE_THRESHOLD_MS;
     }).length;
-  }, [items]);
+  }, [items, latestSeenInData]);
 
   const offlineCount = useMemo(() => items.length - onlineCount, [items, onlineCount]);
 
