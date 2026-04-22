@@ -11,12 +11,20 @@ Suricata EVE log format:
 File offset is tracked between calls so each cycle only ingests new lines.
 """
 
+import ipaddress
 import json
 import logging
 
 from bastion_agent.utils import new_uuid, utcnow_iso
 
 logger = logging.getLogger(__name__)
+
+def _is_private(ip: str) -> bool:
+    try:
+        return ipaddress.ip_address(ip).is_private
+    except ValueError:
+        return False
+
 
 # Tracks how far into eve.json we've already read
 _eve_log_offset: int = 0
@@ -51,11 +59,19 @@ def parse_eve_log(log_path: str = "/var/log/suricata/eve.json") -> list[dict]:
 
                 alert = data.get("alert", {})
 
+                src_ip = data.get("src_ip")
+                dest_ip = data.get("dest_ip")
+
                 if data.get("src_mac"):
                     device_id = data["src_mac"]
                     device_id_type = "mac"
-                elif data.get("src_ip"):
-                    device_id = data["src_ip"]
+                elif src_ip and _is_private(src_ip):
+                    # Outbound alert — local device is the source
+                    device_id = src_ip
+                    device_id_type = "ip"
+                elif dest_ip and _is_private(dest_ip):
+                    # Inbound alert — local device is the destination
+                    device_id = dest_ip
                     device_id_type = "ip"
                 else:
                     continue

@@ -419,23 +419,28 @@ export async function processEvent(event: Record<string, unknown>, deviceId: str
         device.risk_score >= config.AUTO_QUARANTINE_THRESHOLD &&
         device.status !== "quarantined"
     ) {
-        enforcement = quarantineDevice(
-            deviceId,
-            "Risk score exceeded threshold",
-            {
-                initiated_by: "system",
-                evidence: JSON.stringify({
-                    event,
-                    recentAnomalies,
-                    recentIdsSignals: recentIdsSignals.map((signal) => ({
-                        id: signal.id,
-                        type: signal.type,
-                        timestamp: signal.timestamp,
-                    })),
-                    risk_score: device.risk_score,
-                }),
-            }
-        );
+        try {
+            enforcement = quarantineDevice(
+                deviceId,
+                "Risk score exceeded threshold",
+                {
+                    initiated_by: "system",
+                    evidence: JSON.stringify({
+                        event,
+                        recentAnomalies,
+                        recentIdsSignals: recentIdsSignals.map((signal) => ({
+                            id: signal.id,
+                            type: signal.type,
+                            timestamp: signal.timestamp,
+                        })),
+                        risk_score: device.risk_score,
+                    }),
+                }
+            );
+        } catch (err) {
+            // DB action was recorded; edge sync failed — log and continue correlation
+            console.error("Auto-quarantine edge sync failed for device", deviceId, err);
+        }
 
         // Refresh device state after enforcement
         device = getDevice(deviceId);

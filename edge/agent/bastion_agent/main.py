@@ -36,7 +36,7 @@ from bastion_agent.config import (
     MONITOR_ONLY,
     DRY_RUN,
 )
-from bastion_agent.storage import init_local_db, get_pending_events, mark_events_dispatched
+from bastion_agent.storage import init_local_db, get_pending_events, mark_events_dispatched, purge_stale_queue_events
 from bastion_agent.discovery import scan_network
 from bastion_agent import mdns as mdns_listener
 from bastion_agent.dns_monitor import DnsMonitor
@@ -215,6 +215,7 @@ async def dispatch_loop() -> None:
 
     while not _shutdown.is_set():
         try:
+            purge_stale_queue_events()
             pending = get_pending_events(limit=50)
             if pending:
                 dispatched = await dispatch_to_backend(pending)

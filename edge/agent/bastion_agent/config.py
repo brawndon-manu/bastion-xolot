@@ -124,6 +124,16 @@ LOCAL_DB_PATH = os.getenv(
 LOG_PATH = os.getenv("BASTION_LOG_PATH", "/var/log/bastion-agent.log")
 LOG_LEVEL = os.getenv("BASTION_LOG_LEVEL", "INFO")
 
+# Maximum number of undispatched events allowed in the queue.
+# When the cap is reached, the oldest undispatched events are dropped
+# to make room for new ones so the queue never grows unbounded.
+EVENT_QUEUE_MAX_SIZE = int(os.getenv("BASTION_QUEUE_MAX_SIZE", "10000"))
+
+# Events older than this many seconds are considered stale and will never
+# be dispatched to the backend. A 2-hour-old IDS alert has no operational
+# value and would only pollute device records and trigger unnecessary AI calls.
+EVENT_QUEUE_TTL_SECONDS = int(os.getenv("BASTION_QUEUE_TTL", "7200"))
+
 
 # ═══════════════════════════════════════════
 # Safety gate

@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { getDb } from "../db/db";
+import { getDb, transaction } from "../db/db";
 
 /**
  * Canonical device record used by the backend.
@@ -87,7 +87,7 @@ export function createDevice(data: DeviceInput): Device {
 
 /**
  * Fetches a single device by ID.
- * 
+ *
  * Returns:
  *  - Device if found
  *  - undefined if no matching records exists
@@ -95,6 +95,109 @@ export function createDevice(data: DeviceInput): Device {
 export function getDevice(id: string): Device | undefined {
     const db = getDb();
     return db.prepare(`SELECT * FROM devices WHERE id = ?`).get(id) as Device | undefined;
+}
+
+function findDeviceByMac(mac: string): Device | undefined {
+    const db = getDb();
+    return db.prepare(`SELECT * FROM devices WHERE mac_address = ? ORDER BY last_seen DESC LIMIT 1`).get(mac) as Device | undefined;
+}
+
+function findDeviceByIp(ip: string): Device | undefined {
+    const db = getDb();
+    // Prefer a record that also has a MAC address (more authoritative identity)
+    return db.prepare(`
+        SELECT * FROM devices WHERE ip_address = ?
+        ORDER BY CASE WHEN mac_address IS NOT NULL AND mac_address != '' THEN 0 ELSE 1 END, last_seen DESC
+        LIMIT 1
+    `).get(ip) as Device | undefined;
+}
+
+// Hostnames that are too generic to use as a unique device identifier.
+const _GENERIC_HOSTNAMES = new Set([
+    "localhost", "localhost.local", "unknown", "unknown.local",
+]);
+
+function isSpecificHostname(hostname: string): boolean {
+    const lower = hostname.toLowerCase().trim();
+    return lower.length > 0 && !_GENERIC_HOSTNAMES.has(lower);
+}
+
+function findDeviceByHostname(hostname: string): Device | undefined {
+    if (!isSpecificHostname(hostname)) return undefined;
+    const db = getDb();
+    // Prefer the record most recently seen so we merge into the freshest identity
+    return db.prepare(`
+        SELECT * FROM devices WHERE LOWER(hostname) = LOWER(?)
+        ORDER BY last_seen DESC
+        LIMIT 1
+    `).get(hostname) as Device | undefined;
+}
+
+/**
+ * Promotes an IP-only device record to a proper MAC-based identity.
+ *
+ * Called when discovery sees a device with a full MAC address but an IP-only
+ * record already exists for that IP (created earlier by an IDS alert or flow
+ * event). Rather than leaving an unstable IP-keyed record in the DB, we:
+ *  1. Create a new record with id = MAC (stable, hardware identity)
+ *  2. Reassign all related rows (events, alerts, etc.) to the new ID
+ *  3. Delete the old IP-only record
+ *
+ * All three steps run inside a single transaction so a failure leaves no
+ * partial state.
+ */
+function promoteIpOnlyDevice(ipDevice: Device, data: DeviceInput): Device {
+    const mac = data.mac_address!;
+    const db = getDb();
+
+    transaction(() => {
+        db.prepare(`
+            INSERT INTO devices (id, mac_address, ip_address, hostname, vendor, first_seen, last_seen, risk_score, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+            mac,
+            mac,
+            data.ip_address ?? ipDevice.ip_address,
+            data.hostname ?? ipDevice.hostname,
+            data.vendor ?? ipDevice.vendor,
+            ipDevice.first_seen,
+            Date.now(),
+            ipDevice.risk_score,
+            ipDevice.status,
+        );
+
+        for (const table of ["events", "alerts", "anomalies", "metadata_summaries", "enforcement_actions"]) {
+            db.prepare(`UPDATE ${table} SET device_id = ? WHERE device_id = ?`).run(mac, ipDevice.id);
+        }
+
+        const oldBl = db.prepare(`SELECT * FROM device_baselines WHERE device_id = ?`).get(ipDevice.id) as any;
+        if (oldBl) {
+            const newBl = db.prepare(`SELECT * FROM device_baselines WHERE device_id = ?`).get(mac) as any;
+            if (!newBl) {
+                db.prepare(`UPDATE device_baselines SET device_id = ? WHERE device_id = ?`).run(mac, ipDevice.id);
+            } else {
+                const total = oldBl.sample_count + newBl.sample_count;
+                db.prepare(`
+                    UPDATE device_baselines SET
+                        avg_flow_count          = (avg_flow_count * sample_count + ? * ?) / ?,
+                        avg_total_bytes         = (avg_total_bytes * sample_count + ? * ?) / ?,
+                        avg_unique_destinations = (avg_unique_destinations * sample_count + ? * ?) / ?,
+                        sample_count            = ?
+                    WHERE device_id = ?
+                `).run(
+                    oldBl.avg_flow_count, oldBl.sample_count, total,
+                    oldBl.avg_total_bytes, oldBl.sample_count, total,
+                    oldBl.avg_unique_destinations, oldBl.sample_count, total,
+                    total, mac,
+                );
+                db.prepare(`DELETE FROM device_baselines WHERE device_id = ?`).run(ipDevice.id);
+            }
+        }
+
+        db.prepare(`DELETE FROM devices WHERE id = ?`).run(ipDevice.id);
+    });
+
+    return getDevice(mac)!;
 }
 
 /**
@@ -141,19 +244,54 @@ function updateDeviceDetails(id: string, data: DeviceInput): void {
 
 /**
  * Ensures a device record exists before other parts of the system reference it.
- * 
- * Behavior:
- *  - if device already exists -> refresh details and return updated record
- *  - if device does not exist -> create it and return new record
+ *
+ * Lookup priority (first match wins):
+ *  1. Exact ID match
+ *  2. MAC address match (same physical device, IP may have changed)
+ *  3. IP address match, preferring records that already have a MAC
+ *  4. Hostname match — catches MAC randomization where the same device
+ *     reconnects with a rotated MAC but the same mDNS name
+ *  5. Create a new record if nothing found
+ *
+ * Steps 2-4 prevent duplicate records when DHCP reassigns an IP, an event
+ * arrives with only an IP identifier, or a device rotates its MAC address.
  */
 export function ensureDeviceExists(data: DeviceInput): Device {
     const id = data.id || randomUUID();
 
-    const existing = getDevice(id);
+    const byId = getDevice(id);
+    if (byId) {
+        updateDeviceDetails(byId.id, data);
+        return getDevice(byId.id)!;
+    }
 
-    if (existing) {
-        updateDeviceDetails(id, data);
-        return getDevice(id)!;
+    if (data.mac_address) {
+        const byMac = findDeviceByMac(data.mac_address);
+        if (byMac) {
+            updateDeviceDetails(byMac.id, data);
+            return getDevice(byMac.id)!;
+        }
+    }
+
+    if (data.ip_address) {
+        const byIp = findDeviceByIp(data.ip_address);
+        if (byIp) {
+            // If we have a MAC and the existing record is IP-only, promote it to
+            // a stable MAC-based identity instead of leaving an IP-keyed record.
+            if (data.mac_address && (!byIp.mac_address || byIp.mac_address === "")) {
+                return promoteIpOnlyDevice(byIp, data);
+            }
+            updateDeviceDetails(byIp.id, data);
+            return getDevice(byIp.id)!;
+        }
+    }
+
+    if (data.hostname) {
+        const byHostname = findDeviceByHostname(data.hostname);
+        if (byHostname) {
+            updateDeviceDetails(byHostname.id, data);
+            return getDevice(byHostname.id)!;
+        }
     }
 
     return createDevice({ ...data, id });
