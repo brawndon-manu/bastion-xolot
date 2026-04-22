@@ -11,6 +11,8 @@ import { getDb, transaction } from "../db/db";
  *  - enforcement decisions
  *  - device listing APIs
  */
+export type DeviceRole = "infrastructure" | "workstation" | "iot" | "unknown";
+
 export type Device = {
     id: string;                     // Stable backend identifier for the device
     mac_address: string | null;     // MAC address, if known
@@ -21,7 +23,10 @@ export type Device = {
     last_seen: number;              // Most recent time the device was observed
     risk_score: number;             // Accumulated risk score used by correlation/enforcement
     status: string;                 // Current device state (e.g. normal, quarantined)
+    role: DeviceRole;               // Operator-assigned device role (drives detection policy)
 };
+
+const VALID_ROLES = new Set<DeviceRole>(["infrastructure", "workstation", "iot", "unknown"]);
 
 /**
  * Input shape used when creating or updating a device.
@@ -55,7 +60,8 @@ export function createDevice(data: DeviceInput): Device {
         first_seen: Date.now(),
         last_seen: Date.now(),
         risk_score: 0,
-        status: "normal"
+        status: "normal",
+        role: "unknown",
     };
 
     /**
@@ -67,9 +73,9 @@ export function createDevice(data: DeviceInput): Device {
     db.prepare(`
         INSERT INTO devices (
             id, mac_address, ip_address, hostname, vendor,
-            first_seen, last_seen, risk_score, status
+            first_seen, last_seen, risk_score, status, role
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
         device.id,
         device.mac_address,
@@ -79,7 +85,8 @@ export function createDevice(data: DeviceInput): Device {
         device.first_seen,
         device.last_seen,
         device.risk_score,
-        device.status
+        device.status,
+        device.role
     );
 
     return device;
@@ -152,8 +159,8 @@ function promoteIpOnlyDevice(ipDevice: Device, data: DeviceInput): Device {
 
     transaction(() => {
         db.prepare(`
-            INSERT INTO devices (id, mac_address, ip_address, hostname, vendor, first_seen, last_seen, risk_score, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO devices (id, mac_address, ip_address, hostname, vendor, first_seen, last_seen, risk_score, status, role)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
             mac,
             mac,
@@ -164,6 +171,7 @@ function promoteIpOnlyDevice(ipDevice: Device, data: DeviceInput): Device {
             Date.now(),
             ipDevice.risk_score,
             ipDevice.status,
+            ipDevice.role ?? "unknown",
         );
 
         for (const table of ["events", "alerts", "anomalies", "metadata_summaries", "enforcement_actions"]) {
@@ -330,5 +338,12 @@ export function updateDeviceRisk(deviceId: string, delta: number): Device | unde
         WHERE id = ?
     `).run(delta, deviceId);
 
+    return getDevice(deviceId);
+}
+
+export function updateDeviceRole(deviceId: string, role: string): Device | undefined {
+    if (!VALID_ROLES.has(role as DeviceRole)) return undefined;
+    const db = getDb();
+    db.prepare(`UPDATE devices SET role = ? WHERE id = ?`).run(role, deviceId);
     return getDevice(deviceId);
 }

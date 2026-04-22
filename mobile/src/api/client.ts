@@ -22,6 +22,8 @@ export type PairResult = { token: string };
 /**
  * Frontend types used by the mobile UI
  */
+export type DeviceRole = "infrastructure" | "workstation" | "iot" | "unknown";
+
 export type Device = {
   id: string;
   name: string;
@@ -35,6 +37,7 @@ export type Device = {
   lastSeenMs: number;
   riskScore: number;
   status: string;
+  role: DeviceRole;
 };
 
 export type Alert = {
@@ -52,6 +55,7 @@ export type Alert = {
   status: string;
   updatedAt: string;
   resolvedAt: string | null;
+  recommendedAction?: string;
 };
 
 /**
@@ -92,6 +96,7 @@ type BackendDevice = {
   last_seen: number;
   risk_score: number;
   status: string;
+  role: string;
 };
 
 type BackendAlert = {
@@ -243,7 +248,8 @@ function mapDevice(device: BackendDevice): Device
     lastSeen: toIso(lastSeenMs),
     lastSeenMs: lastSeenMs,
     riskScore: device.risk_score,
-    status: device.status
+    status: device.status,
+    role: (device.role as DeviceRole) ?? "unknown",
   };
 }
 
@@ -322,21 +328,45 @@ const evidenceLabelMap: { [key: string]: string } = {
   suspicious_connections: "Suspicious Connections",
   ids_alerts: "IDS Alerts",
   risk_score: "Risk Score",
-  status: "Status",
   reason: "Reason",
   severity: "Severity",
-  confidence: "Confidence",
   summary: "Summary",
   previousBaseline: "Previous Baseline",
   event: "Event",
   anomalies: "Anomalies",
-  ids_context: "IDS Context"
+  ids_context: "IDS Context",
+  // Detection evidence fields
+  evidence: "Detection Evidence",
+  source_module: "Detection Module",
+  // Anomaly detection fields
+  anomaly_type: "Anomaly Type",
+  current_connections: "Connections (Current)",
+  current_bytes: "Bytes Sent (Current)",
+  baseline_mean: "Baseline Average",
+  baseline_stddev: "Baseline Std Dev",
+  z_score: "Deviation Score",
+  device_ip: "Device IP",
+  new_destination_count: "New Destinations",
+  known_destination_count: "Known Destinations",
+  new_destinations: "New Destination IPs",
+  sample_destinations: "Example New IPs",
+  top_port_fanout_dest: "Scan Target IP",
+  max_ports_single_dest: "Ports on Target",
+  max_connections_single_dest: "Connections to Target",
+  unique_ports: "Unique Ports",
+  connections: "Total Connections",
+  scan_candidates: "Scan Targets",
 };
 
+// Fields that are already surfaced elsewhere in the UI or are implementation details
 const EVIDENCE_SKIP_KEYS = new Set([
   "id", "device_id", "source_event_id",
   "window_start", "window_end",
-  "created_at", "updated_at", "resolved_at"
+  "created_at", "updated_at", "resolved_at",
+  // Edge alert wrapper fields already shown in dedicated UI sections
+  "title", "explanation", "recommended_action",
+  "related_event_ids", "recommended_enforcement",
+  "confidence", "status", "metadata",
 ]);
 
 function isEpochMs(v: unknown): v is number {
@@ -386,9 +416,25 @@ function mapEvidence(evidence: string | null): string[]
           for (const innerKey in value as Record<string, unknown>) {
             if (EVIDENCE_SKIP_KEYS.has(innerKey)) continue;
             const innerLabel = evidenceLabelMap[innerKey] || innerKey;
-            const formatted = formatScalar((value as any)[innerKey]);
-            if (formatted !== null) {
-              result.push(label + " · " + innerLabel + ": " + formatted);
+            const innerValue = (value as any)[innerKey];
+            if (Array.isArray(innerValue)) {
+              result.push(label + " · " + innerLabel + ": " + innerValue.length + " item(s)");
+            } else if (typeof innerValue === "object" && innerValue !== null) {
+              // Flatten one more level (e.g. evidence.details.*), dropping the
+              // intermediate key name for cleaner output
+              for (const deepKey in innerValue as Record<string, unknown>) {
+                if (EVIDENCE_SKIP_KEYS.has(deepKey)) continue;
+                const deepLabel = evidenceLabelMap[deepKey] || deepKey;
+                const formatted = formatScalar((innerValue as any)[deepKey]);
+                if (formatted !== null) {
+                  result.push(label + " · " + deepLabel + ": " + formatted);
+                }
+              }
+            } else {
+              const formatted = formatScalar(innerValue);
+              if (formatted !== null) {
+                result.push(label + " · " + innerLabel + ": " + formatted);
+              }
             }
           }
         } else {
@@ -413,7 +459,7 @@ function mapEvidence(evidence: string | null): string[]
 /**
  * Maps backend alert into frontend alert shape
  */
-function mapAlert(alert: BackendAlert): Alert 
+function mapAlert(alert: BackendAlert): Alert
 {
   let deviceId = alert.device_id;
   let explanation = alert.explanation;
@@ -422,13 +468,26 @@ function mapAlert(alert: BackendAlert): Alert
   {
     deviceId = "";
   }
-  
+
   if (!explanation)
   {
     explanation = "No explanation available.";
   }
 
   const createdMs = parseTimestamp(alert.created_at);
+
+  // For edge alerts, extract the recommended_action the detection module wrote
+  let recommendedAction: string | undefined;
+  if (alert.type === "edge_alert" && alert.evidence) {
+    try {
+      const evidenceData = JSON.parse(alert.evidence);
+      if (typeof evidenceData.recommended_action === "string" && evidenceData.recommended_action.trim()) {
+        recommendedAction = evidenceData.recommended_action.trim();
+      }
+    } catch {
+      // ignore parse errors
+    }
+  }
 
   return {
     id: alert.id,
@@ -444,7 +503,8 @@ function mapAlert(alert: BackendAlert): Alert
     sourceLabel: mapSourceLabel(alert.type),
     status: alert.status,
     updatedAt: toIso(parseTimestamp(alert.updated_at)),
-    resolvedAt: alert.resolved_at ? toIso(parseTimestamp(alert.resolved_at)) : null
+    resolvedAt: alert.resolved_at ? toIso(parseTimestamp(alert.resolved_at)) : null,
+    recommendedAction,
   };
 }
 
@@ -551,6 +611,54 @@ async function httpPost<T>(path: string, body?: unknown): Promise<T>
 }
 
 /**
+ * PATCH helper
+ */
+async function httpPatch<T>(path: string, body?: unknown): Promise<T>
+{
+  let url = baseUrl() + path;
+  let headers: any =
+  {
+    "Content-Type": "application/json"
+  };
+
+  if (memoryToken)
+  {
+    headers["Authorization"] = "Bearer " + memoryToken;
+  }
+
+  let options: any =
+  {
+    method: "PATCH",
+    headers: headers
+  };
+
+  if (body)
+  {
+    options.body = JSON.stringify(body);
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30000);
+  options.signal = controller.signal;
+
+  try {
+    let res = await fetch(url, options);
+
+    if (!res.ok)
+    {
+      let text = "";
+      try { text = await res.text(); } catch { text = ""; }
+      throw new Error("HTTP " + res.status + " " + path + " " + text);
+    }
+
+    let data = await res.json();
+    return data as T;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
  * Main API object used by app
  * Handles health checks, alerts, devices, enforcement, realtime websocket updates
  */
@@ -606,6 +714,11 @@ export const api = {
     let row = await httpGet<BackendDevice>("/devices/" + id);
     let device = mapDevice(row);
     return device;
+  },
+
+  updateDeviceRole: async (id: string, role: DeviceRole): Promise<Device> => {
+    let row = await httpPatch<BackendDevice>("/devices/" + id, { role });
+    return mapDevice(row);
   },
 
   /**

@@ -89,9 +89,12 @@ export default function AlertDetailScreen({ route }: Props) {
     evidenceText = alert.evidence.map((e) => "◆  " + e).join("\n");
   }
 
-  // Recommended action
-  let recommendedAction = "Review the affected device and verify the activity is expected.";
-  if (alert.type === "ids_alert") {
+  // Recommended action — use the module-supplied text when available (edge alerts),
+  // otherwise fall back to type-based defaults
+  let recommendedAction: string;
+  if (alert.recommendedAction) {
+    recommendedAction = alert.recommendedAction;
+  } else if (alert.type === "ids_alert") {
     recommendedAction =
       "Inspect the affected device and review the IDS signature evidence before deciding on quarantine or release.";
   } else if (alert.type === "correlated_threat") {
@@ -103,6 +106,8 @@ export default function AlertDetailScreen({ route }: Props) {
   } else if (alert.type === "dns_block") {
     recommendedAction =
       "Review the blocked domain request and confirm whether the destination should be allowed or investigated.";
+  } else {
+    recommendedAction = "Review the affected device and verify the activity is expected.";
   }
 
   return (
