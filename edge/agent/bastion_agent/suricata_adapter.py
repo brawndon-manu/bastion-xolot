@@ -26,8 +26,11 @@ def _is_private(ip: str) -> bool:
         return False
 
 
-# Tracks how far into eve.json we've already read
+# Tracks how far into eve.json we've already read.
+# This is process-local; on a fresh agent start we intentionally begin at EOF
+# so historical Suricata noise does not flood the backend queue.
 _eve_log_offset: int = 0
+_eve_log_initialized: bool = False
 
 
 def parse_eve_log(log_path: str = "/var/log/suricata/eve.json") -> list[dict]:
@@ -36,12 +39,26 @@ def parse_eve_log(log_path: str = "/var/log/suricata/eve.json") -> list[dict]:
 
     Returns a list of normalized Bastion event dicts ready for enqueue_event().
     """
-    global _eve_log_offset
+    global _eve_log_offset, _eve_log_initialized
 
     events: list[dict] = []
 
     try:
         with open(log_path, "r") as f:
+            f.seek(0, 2)
+            log_size = f.tell()
+
+            if not _eve_log_initialized:
+                _eve_log_offset = log_size
+                _eve_log_initialized = True
+                logger.info("Initialized EVE log offset at end of file: %s", log_path)
+                return events
+
+            if _eve_log_offset > log_size:
+                logger.info("EVE log appears rotated or truncated; restarting at current end")
+                _eve_log_offset = log_size
+                return events
+
             f.seek(_eve_log_offset)
 
             for line in f:
