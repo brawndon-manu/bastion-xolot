@@ -279,7 +279,7 @@ function detectAnomaly(
     summary: MetadataSummary,
     previousBaseline: DeviceBaseline | undefined
 ): StoredAnomaly | undefined {
-    if (!previousBaseline || previousBaseline.sample_count < 3) {
+    if (!previousBaseline || previousBaseline.sample_count < 10) {
         return undefined;
     }
 

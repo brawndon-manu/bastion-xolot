@@ -138,6 +138,11 @@ def parse_eve_log(log_path: str = "/var/log/suricata/eve.json") -> list[dict]:
                 else:
                     continue
 
+                # Both endpoints are private — local network traffic, not an external attack.
+                # SSDP→router, mDNS, and similar patterns produce amplification false positives here.
+                if src_ip and dest_ip and _is_private(src_ip) and _is_private(dest_ip):
+                    continue
+
                 sev_map = {1: "high", 2: "medium", 3: "low"}
                 severity = sev_map.get(alert.get("severity"), "low")
                 signature = alert.get("signature", "")

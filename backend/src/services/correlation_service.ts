@@ -329,12 +329,7 @@ function createCorrelatedThreatAlert(
             ids_context: idsEvidence,
         }),
         confidence,
-        fingerprintParts: [
-            "correlated_threat",
-            String(event.type),
-            anomalies.map((anomaly) => anomaly.id).join(","),
-            idsEvidence.map((signal) => signal.id).join(","),
-        ],
+        fingerprintParts: ["correlated_threat"],
     });
 }
 

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { buildAlertFingerprint, createAlert, findRecentActiveAlert, refreshAlert } from "../services/alert_service";
-import { ensureDeviceExists } from "../services/device_service";
+import { ensureDeviceExists, touchDevice } from "../services/device_service";
 import { broadcast } from "../realtime/websocket";
 import { processEvent } from "../services/correlation_service";
 import { logger } from "../utils/logger";
@@ -409,6 +409,8 @@ eventsRouter.post("/", async (req, res) => {
             hostname: event.hostname,
             vendor: event.vendor as string | undefined,
         });
+
+        touchDevice(device.id);
 
         // Broadcast device seen for ANY event to keep UI online status accurate
         broadcast("device.seen", device);
