@@ -33,6 +33,7 @@ _DEDUP_WINDOW_SECONDS = 120
 _NOISY_SIGNATURE_PREFIXES = (
     "suricata stream ",
     "et info observed ",
+    "et info session traversal utilities for nat ",
 )
 
 
