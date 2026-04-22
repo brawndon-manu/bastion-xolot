@@ -57,7 +57,7 @@ export default function DashboardScreen() {
       if (showSpinner) setManualRefreshing(true);
       setHealth(await api.health());
     } catch {
-      setHealth(null);
+      // keep last known health state on transient errors rather than flipping to OFFLINE
     } finally {
       if (showSpinner) setManualRefreshing(false);
     }

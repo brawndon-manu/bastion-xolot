@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { View, Text, FlatList, Pressable, StyleSheet, RefreshControl } from "react-native";
+import { View, Text, FlatList, Pressable, StyleSheet, RefreshControl, TouchableOpacity } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../App";
 import AlertCard from "../components/AlertCard";
@@ -34,7 +34,14 @@ export default function AlertsScreen({ navigation }: Props) {
 
   return (
     <View style={styles.root}>
-      {error && <Text style={styles.error}>{error}</Text>}
+      {error && (
+        <View style={styles.errorRow}>
+          <Text style={styles.error}>{error}</Text>
+          <TouchableOpacity onPress={() => dispatch(loadAlerts())} style={styles.retryBtn}>
+            <Text style={styles.retryText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       <FlatList
         data={items}
@@ -62,5 +69,8 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: T.bgBase },
   list: { padding: 16, gap: 10, paddingBottom: 24 },
   empty: { color: T.textSecondary, marginTop: 24, textAlign: "center", letterSpacing: 0.5 },
-  error: { color: T.dangerText, margin: 16, marginBottom: 0, fontSize: 13 },
+  error: { color: T.dangerText, fontSize: 13, flex: 1 },
+  errorRow: { flexDirection: "row", alignItems: "center", margin: 16, marginBottom: 0, gap: 10 },
+  retryBtn: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: T.borderSubtle },
+  retryText: { color: T.textSecondary, fontSize: 12, fontWeight: "700" },
 });

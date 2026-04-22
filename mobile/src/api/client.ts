@@ -12,6 +12,11 @@ let listeners: Listener[] = [];
 let ws: WebSocket | null = null;
 let memoryToken: string | null = null;
 
+let _reconnectDelay = 1000;
+let _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+const MAX_RECONNECT_DELAY = 30000;
+const FETCH_TIMEOUT_MS = 10000;
+
 export type PairResult = { token: string };
 
 /**
@@ -425,46 +430,46 @@ function mapEnforcementAction(action: BackendEnforcementAction): EnforcementActi
 /**
  * GET helper
  */
-async function httpGet<T>(path: string): Promise<T> 
+async function httpGet<T>(path: string): Promise<T>
 {
   let url = baseUrl() + path;
-  let headers: any = 
+  let headers: any =
   {
     "Content-Type": "application/json"
   };
 
-  if (memoryToken) 
+  if (memoryToken)
   {
     headers["Authorization"] = "Bearer " + memoryToken;
   }
 
-  let res = await fetch(url, {method: "GET", headers: headers});
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
-  if (!res.ok)
-  {
-    let text = "";
+  try {
+    let res = await fetch(url, {method: "GET", headers: headers, signal: controller.signal});
 
-    try {
-      text = await res.text();
-    } 
-    catch {
-      text = "";
+    if (!res.ok)
+    {
+      let text = "";
+      try { text = await res.text(); } catch { text = ""; }
+      throw new Error("HTTP " + res.status + " " + path + " " + text);
     }
 
-    throw new Error("HTTP " + res.status + " " + path + " " + text);
+    let data = await res.json();
+    return data as T;
+  } finally {
+    clearTimeout(timer);
   }
-
-  let data = await res.json();
-  return data as T;
 }
 
 /**
  * POST helper
  */
-async function httpPost<T>(path: string, body?: unknown): Promise<T> 
+async function httpPost<T>(path: string, body?: unknown): Promise<T>
 {
   let url = baseUrl() + path;
-  let headers: any = 
+  let headers: any =
   {
     "Content-Type": "application/json"
   };
@@ -485,24 +490,25 @@ async function httpPost<T>(path: string, body?: unknown): Promise<T>
     options.body = JSON.stringify(body);
   }
 
-  let res = await fetch(url, options);
-    
-  if (!res.ok) 
-  {
-    let text = "";
-    
-    try {
-      text = await res.text();
-    } 
-    catch {
-      text = "";
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  options.signal = controller.signal;
+
+  try {
+    let res = await fetch(url, options);
+
+    if (!res.ok)
+    {
+      let text = "";
+      try { text = await res.text(); } catch { text = ""; }
+      throw new Error("HTTP " + res.status + " " + path + " " + text);
     }
 
-    throw new Error("HTTP " + res.status + " " + path + " " + text);
+    let data = await res.json();
+    return data as T;
+  } finally {
+    clearTimeout(timer);
   }
-
-  let data = await res.json();
-  return data as T;
 }
 
 /**
@@ -629,7 +635,7 @@ export const api = {
  * Opens Websocket connection
  */
   connectRealtime: () => {
-    if (ws) 
+    if (ws)
     {
       return;
     }
@@ -637,12 +643,19 @@ export const api = {
     ws = new WebSocket(wsUrl());
 
     ws.onopen = () => {
+      _reconnectDelay = 1000; // reset backoff on successful connect
       listeners.forEach((listener) => listener({ type: "WS_OPEN" }));
     };
 
     ws.onclose = () => {
       listeners.forEach((listener) => listener({ type: "WS_CLOSED" }));
       ws = null;
+      // reconnect with exponential backoff (1s → 2s → 4s … max 30s)
+      _reconnectTimer = setTimeout(() => {
+        _reconnectTimer = null;
+        _reconnectDelay = Math.min(_reconnectDelay * 2, MAX_RECONNECT_DELAY);
+        api.connectRealtime();
+      }, _reconnectDelay);
     };
 
     ws.onerror = () => {
@@ -708,18 +721,21 @@ export const api = {
           });
           });
         } catch (error) {
+          console.warn("WebSocket message parse error:", error);
         }
-     };  
+     };
   },
 
   /**
-   * Closes the Websocket connection
+   * Closes the Websocket connection and cancels any pending reconnect
    */
   disconnectRealtime: () => {
-    if (ws) 
-    {
-      ws.close();
+    if (_reconnectTimer) {
+      clearTimeout(_reconnectTimer);
+      _reconnectTimer = null;
     }
+    _reconnectDelay = 1000;
+    if (ws) ws.close();
     ws = null;
   },
 
