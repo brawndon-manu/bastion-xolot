@@ -5,13 +5,15 @@ import { RootStackParamList } from "../App";
 import DeviceCard from "../components/DeviceCard";
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "../state/store";
-import { loadDevices } from "../state/slices/devicesSlice";
+import { deviceSeen, loadDevices } from "../state/slices/devicesSlice";
 import { CompositeScreenProps } from "@react-navigation/native";
 import { BottomTabScreenProps } from "@react-navigation/bottom-tabs";
-import { api } from "../api/client";
+import { api, ONLINE_THRESHOLD_MS, parseTimestamp } from "../api/client";
 import { T } from "../theme";
 
-const ONLINE_THRESHOLD_MS = 5 * 60 * 1000;
+const getDeviceTimestamp = (d: any): number => {
+  return d.lastSeenMs || parseTimestamp(d.lastSeen) || parseTimestamp(d.last_seen) || 0;
+};
 
 function MetricCard({ label, value, accent }: { label: string; value: string; accent: string }) {
   return (
@@ -38,8 +40,28 @@ export default function DevicesScreen({ navigation }: Props) {
   const { items, loading } = useSelector((state: RootState) => state.devices);
   const lastRefresh = useRef<number>(0);
 
-  const sortedItems  = useMemo(() => [...items].sort((a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime()), [items]);
-  const onlineCount  = useMemo(() => items.filter((d) => Date.now() - new Date(d.lastSeen).getTime() < ONLINE_THRESHOLD_MS).length, [items]);
+  const sortedItems = useMemo(() => {
+    return [...items].sort((a, b) => getDeviceTimestamp(b) - getDeviceTimestamp(a));
+  }, [items]);
+
+  const onlineCount = useMemo(() => {
+    if (items.length === 0) return 0;
+
+    const timestamps = items.map(getDeviceTimestamp).filter((t) => t > 0);
+    if (timestamps.length === 0) return 0;
+
+    // Relative 'Now' reference:
+    // We use the freshest 'lastSeen' in the entire dataset as the baseline for 'now'.
+    // This allows the app to stay accurate even if the system clock (2026) is shifted.
+    const latestSeenInData = Math.max(...timestamps);
+
+    return items.filter((d) => {
+      const ts = getDeviceTimestamp(d);
+      // Device is online if seen within 10 minutes of the most recent network activity
+      return latestSeenInData - ts < ONLINE_THRESHOLD_MS;
+    }).length;
+  }, [items]);
+
   const offlineCount = useMemo(() => items.length - onlineCount, [items, onlineCount]);
 
   const throttledRefresh = () => {
@@ -57,6 +79,7 @@ export default function DevicesScreen({ navigation }: Props) {
     const unsub = api.subscribe((event) => {
       if (!event) return;
       if (event.type === "ENFORCEMENT_UPDATED") dispatch(loadDevices());
+      if (event.type === "DEVICE_SEEN") dispatch(deviceSeen(event.payload));
       if (event.type === "WS_EVENT" && event.event === "event.received") throttledRefresh();
     });
 

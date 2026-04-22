@@ -369,6 +369,9 @@ eventsRouter.post("/", async (req, res) => {
             vendor: event.vendor as string | undefined,
         });
 
+        // Broadcast device seen for ANY event to keep UI online status accurate
+        broadcast("device.seen", device);
+
         // Process event through correlation engine.
         const result = await processEvent(event, device.id);
 

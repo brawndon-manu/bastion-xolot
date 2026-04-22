@@ -32,6 +32,7 @@ export type Device = {
   trusted: boolean;
   firstSeen: string;
   lastSeen: string;
+  lastSeenMs: number;
   riskScore: number;
   status: string;
 };
@@ -44,6 +45,7 @@ export type Alert = {
   plainEnglish: string;
   evidence: string[];
   timestamp: string;
+  timestampMs: number;
   type: string;
   confidence: number | null;
   sourceLabel: "Behavioral" | "IDS" | "Correlated" | "DNS" | "Suspicious Connection" | "General";
@@ -120,9 +122,39 @@ type BackendEnforcementAction = {
 };
 
 
-function toIso(millisecs: number) 
-{
-  return new Date(millisecs).toISOString();
+export const ONLINE_THRESHOLD_MS = 10 * 60 * 1000; // 10 minute threshold
+
+/**
+ * Robustly parses various timestamp formats into milliseconds.
+ */
+export function parseTimestamp(val: number | string | null | undefined): number {
+  if (!val) return 0;
+
+  // Handle number (seconds, ms, or micros)
+  if (typeof val === "number") {
+    if (val > 1_000_000_000_000_000) return val / 1000; // micros
+    if (val > 1_000_000_000_000) return val; // ms
+    if (val > 100_000_000) return val * 1000; // seconds
+    return val;
+  }
+
+  // Handle string
+  if (typeof val === "string") {
+    // If it's a numeric string, parse it first
+    if (/^\d+(\.\d+)?$/.test(val)) {
+      return parseTimestamp(parseFloat(val));
+    }
+    // Otherwise try as Date string
+    const d = new Date(val).getTime();
+    if (!isNaN(d) && d > 0) return d;
+  }
+
+  return 0;
+}
+
+function toIso(ms: number) {
+  if (!ms || ms <= 0) return new Date(0).toISOString();
+  return new Date(ms).toISOString();
 }
 
 const API_PORT = 3000;
@@ -196,6 +228,9 @@ function mapDevice(device: BackendDevice): Device
     name = "Device " + mac;
   }
 
+  const lastSeenMs = parseTimestamp(device.last_seen);
+  const firstSeenMs = parseTimestamp(device.first_seen);
+
   return {
     id: device.id,
     name: name,
@@ -204,8 +239,9 @@ function mapDevice(device: BackendDevice): Device
     hostname: hostname,
     vendor: (device as any).vendor ?? null,
     trusted: true,
-    firstSeen: toIso(device.first_seen),
-    lastSeen: toIso(device.last_seen),
+    firstSeen: toIso(firstSeenMs),
+    lastSeen: toIso(lastSeenMs),
+    lastSeenMs: lastSeenMs,
     riskScore: device.risk_score,
     status: device.status
   };
@@ -392,6 +428,8 @@ function mapAlert(alert: BackendAlert): Alert
     explanation = "No explanation available.";
   }
 
+  const createdMs = parseTimestamp(alert.created_at);
+
   return {
     id: alert.id,
     severity: mapSeverity(alert.severity),
@@ -399,13 +437,14 @@ function mapAlert(alert: BackendAlert): Alert
     title: alert.title,
     plainEnglish: explanation,
     evidence: mapEvidence(alert.evidence),
-    timestamp: toIso(alert.created_at),
+    timestamp: toIso(createdMs),
+    timestampMs: createdMs,
     type: alert.type,
     confidence: alert.confidence,
     sourceLabel: mapSourceLabel(alert.type),
     status: alert.status,
-    updatedAt: toIso(alert.updated_at),
-    resolvedAt: alert.resolved_at ? toIso(alert.resolved_at) : null
+    updatedAt: toIso(parseTimestamp(alert.updated_at)),
+    resolvedAt: alert.resolved_at ? toIso(parseTimestamp(alert.resolved_at)) : null
   };
 }
 
@@ -444,7 +483,7 @@ async function httpGet<T>(path: string): Promise<T>
   }
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), 30000); // 30s timeout
 
   try {
     let res = await fetch(url, {method: "GET", headers: headers, signal: controller.signal});
@@ -491,7 +530,7 @@ async function httpPost<T>(path: string, body?: unknown): Promise<T>
   }
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), 30000); // 30s timeout
   options.signal = controller.signal;
 
   try {
@@ -707,7 +746,21 @@ export const api = {
           listener({
             type: "ENFORCEMENT_UPDATED",
             payload: action
-      });
+          });
+        });
+
+        return;
+      }
+
+      if (parsedMessage.event === "device.seen" && parsedMessage.payload)
+      {
+        let device = mapDevice(parsedMessage.payload as BackendDevice);
+
+        listeners.forEach((listener) => {
+          listener({
+            type: "DEVICE_SEEN",
+            payload: device
+          });
         });
 
         return;
