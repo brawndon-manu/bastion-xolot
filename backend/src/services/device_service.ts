@@ -326,7 +326,7 @@ export function updateDeviceRisk(deviceId: string, delta: number): Device | unde
     const db = getDb();
     db.prepare(`
         UPDATE devices
-        SET risk_score = MAX(risk_score + ?, 0)
+        SET risk_score = MIN(MAX(risk_score + ?, 0), 100)
         WHERE id = ?
     `).run(delta, deviceId);
 

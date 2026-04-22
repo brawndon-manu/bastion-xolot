@@ -47,6 +47,45 @@ type AlertEmission = {
     created: boolean;
 };
 
+type AlertSeverity = "low" | "medium" | "high";
+
+const IDS_SEVERITY_PROFILE: Record<AlertSeverity, { riskDelta: number; confidence: number }> = {
+    low: { riskDelta: 3, confidence: 0.45 },
+    medium: { riskDelta: 8, confidence: 0.65 },
+    high: { riskDelta: 18, confidence: 0.82 },
+};
+
+function normalizeAlertSeverity(value: unknown): AlertSeverity {
+    const severity = typeof value === "string" ? value.toLowerCase() : "";
+    if (severity === "high" || severity === "medium" || severity === "low") {
+        return severity;
+    }
+    return "medium";
+}
+
+function isInformationalIdsSignal(event: Record<string, unknown>): boolean {
+    const signature = String(event.signature || event.reason || "").toLowerCase();
+    const category = String(event.category || "").toLowerCase();
+
+    return (
+        signature.startsWith("et info ") ||
+        signature.includes("observed ") ||
+        signature.includes("suricata stream") ||
+        category.includes("not suspicious") ||
+        category.includes("generic protocol command decode")
+    );
+}
+
+function classifyIdsSeverity(event: Record<string, unknown>): AlertSeverity {
+    const reportedSeverity = normalizeAlertSeverity(event.severity);
+
+    if (isInformationalIdsSignal(event)) {
+        return reportedSeverity === "high" ? "medium" : "low";
+    }
+
+    return reportedSeverity;
+}
+
 function safeParseStoredEvent(event: StoredEvent): Record<string, unknown> {
     try {
         return JSON.parse(event.data) as Record<string, unknown>;
@@ -330,15 +369,18 @@ export async function processEvent(event: Record<string, unknown>, deviceId: str
      * ==============================
      */
     if (event.type === "ids_alert") {
-        riskDelta = 25;
+        const idsSeverity = classifyIdsSeverity(event);
+        const idsProfile = IDS_SEVERITY_PROFILE[idsSeverity];
+
+        riskDelta = idsProfile.riskDelta;
         alertEmissions.push(createOrRefreshAlert({
             device_id: deviceId,
             type: String(event.type),
-            severity: "high",
+            severity: idsSeverity,
             title: `IDS Alert: ${event.signature || "Unknown threat"}`,
             explanation: explainSecurityEvent("ids_alert", event),
             evidence: JSON.stringify(event),
-            confidence: 0.9,
+            confidence: idsProfile.confidence,
             fingerprintParts: [
                 event.type,
                 String(event.signature || event.reason || "unknown"),
