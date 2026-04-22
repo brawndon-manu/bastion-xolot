@@ -12,6 +12,27 @@ function getClient(): Anthropic | null {
     return _client;
 }
 
+// ── Daily call budget ──
+let _budgetDay = "";
+let _budgetCount = 0;
+
+function withinDailyBudget(): boolean {
+    if (config.AI_DAILY_CALL_LIMIT === 0) return false;
+    const today = new Date().toISOString().slice(0, 10);
+    if (today !== _budgetDay) {
+        _budgetDay = today;
+        _budgetCount = 0;
+    }
+    if (_budgetCount >= config.AI_DAILY_CALL_LIMIT) {
+        logger.warn(
+            `AI daily call limit (${config.AI_DAILY_CALL_LIMIT}) reached — falling back to static explanation`,
+        );
+        return false;
+    }
+    _budgetCount++;
+    return true;
+}
+
 /**
  * Converts technical security data into human-readable explanation.
  * Used as a synchronous fallback when AI is unavailable.
@@ -49,6 +70,7 @@ export async function generateAIExplanation(
 ): Promise<string | null> {
     const client = getClient();
     if (!client) return null;
+    if (!withinDailyBudget()) return null;
 
     try {
         const message = await client.messages.create({

@@ -87,6 +87,13 @@ function sendEnforcementError(res: any, err: unknown, fallbackMessage: string) {
     return res.status(500).json({ error: "Internal server error" });
 }
 
+// UUID v4 pattern — rejects obviously malformed IDs before hitting the DB
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isValidId(id: unknown): id is string {
+    return typeof id === "string" && UUID_RE.test(id);
+}
+
 /**
  * Handles device quarantine requests.
  *  - Normalizes input
@@ -94,6 +101,9 @@ function sendEnforcementError(res: any, err: unknown, fallbackMessage: string) {
  *  - Returns created enforcement action
  */
 async function handleQuarantine(req: any, res: any) {
+    if (!isValidId(req.params.id)) {
+        return res.status(400).json({ error: "Invalid device ID" });
+    }
     try {
         const request = normalizeEnforcementRequest(req.body, "policy_violation");
         const action = quarantineDevice(req.params.id, request.reason, {
@@ -110,12 +120,11 @@ async function handleQuarantine(req: any, res: any) {
 // Route a quarantine a device by ID
 enforcementRouter.post("/quarantine/:id", handleQuarantine);
 
-// NOTE: Duplicate route with typo ("quarantine")
-// Likely added for backward compatibility or mistake
-enforcementRouter.post("/quaratine/:id", handleQuarantine);
-
 // Handles releasing (unquarantining) a device
 enforcementRouter.post("/release/:id", async (req, res) => {
+    if (!isValidId(req.params.id)) {
+        return res.status(400).json({ error: "Invalid device ID" });
+    }
     try {
         const request = normalizeEnforcementRequest(req.body, "manual_release");
         const action = unquarantineDevice(req.params.id, {

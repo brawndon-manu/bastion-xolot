@@ -15,7 +15,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from bastion_agent.config import LOCAL_DB_PATH
+from bastion_agent.config import LOCAL_DB_PATH, EVENT_QUEUE_MAX_SIZE, EVENT_QUEUE_TTL_SECONDS
 from bastion_agent.utils import utcnow_iso
 
 logger = logging.getLogger(__name__)
@@ -177,21 +177,83 @@ def get_all_known_devices() -> list[dict]:
 # ─────────────────────────────────────────────
 
 def enqueue_event(event_id: str, event_dict: dict) -> None:
-    """Store an event locally for later dispatch to the backend."""
-    get_conn().execute(
+    """
+    Store an event locally for later dispatch to the backend.
+
+    If the undispatched queue is at or above EVENT_QUEUE_MAX_SIZE, the oldest
+    events are dropped before inserting so the queue never grows unbounded.
+    """
+    conn = get_conn()
+    count = conn.execute(
+        "SELECT COUNT(*) FROM event_queue WHERE dispatched = 0"
+    ).fetchone()[0]
+
+    if count >= EVENT_QUEUE_MAX_SIZE:
+        overflow = count - EVENT_QUEUE_MAX_SIZE + 1
+        conn.execute(
+            "DELETE FROM event_queue WHERE id IN ("
+            "  SELECT id FROM event_queue WHERE dispatched = 0"
+            "  ORDER BY created_at ASC LIMIT ?"
+            ")",
+            (overflow,),
+        )
+        logger.warning(
+            "Event queue cap (%d) reached — dropped %d oldest events",
+            EVENT_QUEUE_MAX_SIZE, overflow,
+        )
+
+    conn.execute(
         "INSERT OR IGNORE INTO event_queue (id, event_json, created_at) VALUES (?, ?, ?)",
         (event_id, json.dumps(event_dict), utcnow_iso()),
     )
-    get_conn().commit()
+    conn.commit()
 
 
 def get_pending_events(limit: int = 50) -> list[dict]:
-    """Retrieve events that have not yet been dispatched."""
-    rows = get_conn().execute(
-        "SELECT id, event_json FROM event_queue WHERE dispatched = 0 ORDER BY created_at ASC LIMIT ?",
+    """
+    Retrieve events that have not yet been dispatched and are within the TTL window.
+
+    Events older than EVENT_QUEUE_TTL_SECONDS are stale — skip them so they
+    are never sent to the backend, and mark them dispatched to prevent them
+    from appearing on future calls.
+    """
+    conn = get_conn()
+
+    # Mark stale events as dispatched so they stop clogging the queue
+    conn.execute(
+        "UPDATE event_queue SET dispatched = 1"
+        " WHERE dispatched = 0"
+        " AND created_at < datetime('now', ? || ' seconds')",
+        (f"-{EVENT_QUEUE_TTL_SECONDS}",),
+    )
+    conn.commit()
+
+    rows = conn.execute(
+        "SELECT id, event_json FROM event_queue WHERE dispatched = 0"
+        " ORDER BY created_at ASC LIMIT ?",
         (limit,),
     ).fetchall()
     return [{"id": row["id"], **json.loads(row["event_json"])} for row in rows]
+
+
+def purge_stale_queue_events() -> int:
+    """
+    Hard-delete dispatched and stale events older than EVENT_QUEUE_TTL_SECONDS.
+
+    Called periodically to keep the queue table from growing indefinitely on disk.
+    Returns the number of rows deleted.
+    """
+    conn = get_conn()
+    cursor = conn.execute(
+        "DELETE FROM event_queue"
+        " WHERE created_at < datetime('now', ? || ' seconds')",
+        (f"-{EVENT_QUEUE_TTL_SECONDS}",),
+    )
+    conn.commit()
+    deleted = cursor.rowcount
+    if deleted:
+        logger.info("Purged %d stale events from queue", deleted)
+    return deleted
 
 
 def mark_events_dispatched(event_ids: list[str]) -> None:
