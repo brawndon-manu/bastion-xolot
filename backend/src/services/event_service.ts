@@ -305,7 +305,7 @@ function detectAnomaly(
         return undefined;
     }
 
-    const severity = score >= 40 ? "high" : "medium";
+    const severity = score >= 55 ? "high" : score >= 40 ? "medium" : "low";
     const now = Date.now();
 
     return {

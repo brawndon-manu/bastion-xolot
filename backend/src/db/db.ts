@@ -190,6 +190,42 @@ function applyMigrations() {
               OR LOWER(COALESCE(title, '')) LIKE '%observed %'
           )
     `);
+
+    // Older correlation logic promoted every multi-signal match to high/0.98.
+    // Reset active rows so the app does not keep showing stale inflated risk.
+    db.exec(`
+        UPDATE alerts
+        SET severity = 'medium',
+            confidence = MIN(COALESCE(confidence, 0.78), 0.78),
+            updated_at = COALESCE(updated_at, created_at)
+        WHERE type = 'correlated_threat'
+          AND LOWER(COALESCE(severity, '')) = 'high'
+          AND COALESCE(confidence, 0) >= 0.98
+    `);
+
+    // Direct edge-built alerts used to bypass backend severity normalization.
+    db.exec(`
+        UPDATE alerts
+        SET severity = CASE
+                WHEN LOWER(COALESCE(title, '')) LIKE '%suricata stream%' THEN 'low'
+                WHEN LOWER(COALESCE(title, '')) LIKE '%session traversal utilities for nat%' THEN 'low'
+                WHEN LOWER(COALESCE(title, '')) LIKE '%stun binding%' THEN 'low'
+                WHEN LOWER(COALESCE(title, '')) LIKE '%et info observed%' THEN 'low'
+                WHEN LOWER(COALESCE(title, '')) LIKE '%discord service domain%' THEN 'low'
+                ELSE severity
+            END,
+            confidence = CASE
+                WHEN LOWER(COALESCE(title, '')) LIKE '%suricata stream%' THEN MIN(COALESCE(confidence, 0.45), 0.45)
+                WHEN LOWER(COALESCE(title, '')) LIKE '%session traversal utilities for nat%' THEN MIN(COALESCE(confidence, 0.45), 0.45)
+                WHEN LOWER(COALESCE(title, '')) LIKE '%stun binding%' THEN MIN(COALESCE(confidence, 0.45), 0.45)
+                WHEN LOWER(COALESCE(title, '')) LIKE '%et info observed%' THEN MIN(COALESCE(confidence, 0.45), 0.45)
+                WHEN LOWER(COALESCE(title, '')) LIKE '%discord service domain%' THEN MIN(COALESCE(confidence, 0.45), 0.45)
+                ELSE confidence
+            END,
+            updated_at = COALESCE(updated_at, created_at)
+        WHERE type = 'edge_alert'
+          AND LOWER(COALESCE(severity, '')) = 'high'
+    `);
 }
 
 /**
