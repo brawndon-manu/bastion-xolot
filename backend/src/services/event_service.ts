@@ -279,7 +279,7 @@ function detectAnomaly(
     summary: MetadataSummary,
     previousBaseline: DeviceBaseline | undefined
 ): StoredAnomaly | undefined {
-    if (!previousBaseline || previousBaseline.sample_count < 3) {
+    if (!previousBaseline || previousBaseline.sample_count < 10) {
         return undefined;
     }
 
@@ -305,7 +305,7 @@ function detectAnomaly(
         return undefined;
     }
 
-    const severity = score >= 40 ? "high" : "medium";
+    const severity = score >= 55 ? "high" : score >= 40 ? "medium" : "low";
     const now = Date.now();
 
     return {

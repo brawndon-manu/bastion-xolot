@@ -1,36 +1,3 @@
-"""
-Bastión Xólot — Enforcement Audit Module (Phase 4)
-
-Append-only local enforcement journal.
-
-R26 requirement:
-- every enforcement transaction is recorded
-- immutable append-only history
-- safe in monitor-only (still logs planned tx)
-
-Storage:
-- NDJSON file (one JSON object per line): history.jsonl
-- (SQLite/backend sync can be layered later)
-
---- PHASE 4 UPGRADE NOTES ---
-This module was rewritten from its Phase 4 stub. The old stub is preserved
-below in comments so the reasoning for each change is clear.
-
-Old module header described:
-  - "Local SQLite table (agent-side)"
-  - "Synced to backend via enforcement events"
-  - Audit record fields tied to enforcement.schema.json (action, device, reason, etc.)
-
-WHY THE HEADER CHANGED:
-  Storage is now a flat NDJSON file (history.jsonl), not SQLite.
-  A flat append-only file is simpler, trivially auditable (open it in any
-  text editor), and impossible to accidentally mutate. SQLite sync to the
-  backend can still be layered on top later — but it is not needed for
-  Phase 4 groundwork. The audit record shape is now driven by
-  enforcement_transaction.schema.json, not enforcement.schema.json, because
-  a transaction record captures gates + plan + result, not just "an action happened."
-"""
-
 from __future__ import annotations
 
 import json
@@ -41,22 +8,6 @@ from pathlib import Path
 from typing import Any, Optional
 
 from bastion_agent.utils import utcnow_iso
-
-
-# ---------------------------------------------------------------------------
-# OLD IMPORT BLOCK (removed)
-# ---------------------------------------------------------------------------
-# import logging
-# from typing import Optional
-# logger = logging.getLogger(__name__)
-#
-# WHY REMOVED:
-#   The old stub used Python's logging module to emit debug messages
-#   because there was nothing real to do yet. The new implementation
-#   actually writes to disk, so logging is no longer the primary output.
-#   A logger could be added back later for error reporting, but it is
-#   not needed for the core append-only contract.
-# ---------------------------------------------------------------------------
 
 
 # Default paths — can be overridden by environment variables.
@@ -79,34 +30,6 @@ class AuditPaths:
 
 def _ensure_parent_dir(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-
-
-# ---------------------------------------------------------------------------
-# OLD FUNCTION: log_enforcement_action (removed)
-# ---------------------------------------------------------------------------
-# def log_enforcement_action(
-#     device_id: str,
-#     action: str,
-#     reason: str,
-#     initiated_by: str = "system",
-#     alert_id: str | None = None,
-# ) -> str | None:
-#
-# WHY REMOVED:
-#   This function took individual fields as separate arguments and was
-#   designed around the old mental model: "log a thing that happened to
-#   a device." It had no concept of:
-#     - safety gates (was monitor_only on when this ran?)
-#     - nft plan (what firewall ops were computed?)
-#     - transaction result (PLANNED_ONLY vs EXECUTED vs FAILED)
-#   It also planned to write to SQLite, which adds complexity without
-#   adding auditability at this stage.
-#
-#   Replaced by: append_tx(tx: dict)
-#   The new function takes a complete transaction dict matching
-#   enforcement_transaction.schema.json. One function, one record,
-#   all the context in one place.
-# ---------------------------------------------------------------------------
 
 
 def append_tx(tx: dict[str, Any], paths: AuditPaths = AuditPaths()) -> str:

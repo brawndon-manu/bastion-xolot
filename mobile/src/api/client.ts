@@ -12,11 +12,18 @@ let listeners: Listener[] = [];
 let ws: WebSocket | null = null;
 let memoryToken: string | null = null;
 
+let _reconnectDelay = 1000;
+let _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+const MAX_RECONNECT_DELAY = 30000;
+const FETCH_TIMEOUT_MS = 10000;
+
 export type PairResult = { token: string };
 
 /**
  * Frontend types used by the mobile UI
  */
+export type DeviceRole = "infrastructure" | "workstation" | "iot" | "unknown";
+
 export type Device = {
   id: string;
   name: string;
@@ -27,8 +34,10 @@ export type Device = {
   trusted: boolean;
   firstSeen: string;
   lastSeen: string;
+  lastSeenMs: number;
   riskScore: number;
   status: string;
+  role: DeviceRole;
 };
 
 export type Alert = {
@@ -39,12 +48,14 @@ export type Alert = {
   plainEnglish: string;
   evidence: string[];
   timestamp: string;
+  timestampMs: number;
   type: string;
   confidence: number | null;
   sourceLabel: "Behavioral" | "IDS" | "Correlated" | "DNS" | "Suspicious Connection" | "General";
   status: string;
   updatedAt: string;
   resolvedAt: string | null;
+  recommendedAction?: string;
 };
 
 /**
@@ -85,6 +96,7 @@ type BackendDevice = {
   last_seen: number;
   risk_score: number;
   status: string;
+  role: string;
 };
 
 type BackendAlert = {
@@ -115,9 +127,39 @@ type BackendEnforcementAction = {
 };
 
 
-function toIso(millisecs: number) 
-{
-  return new Date(millisecs).toISOString();
+export const ONLINE_THRESHOLD_MS = 10 * 60 * 1000; // 10 minute threshold
+
+/**
+ * Robustly parses various timestamp formats into milliseconds.
+ */
+export function parseTimestamp(val: number | string | null | undefined): number {
+  if (!val) return 0;
+
+  // Handle number (seconds, ms, or micros)
+  if (typeof val === "number") {
+    if (val > 1_000_000_000_000_000) return val / 1000; // micros
+    if (val > 1_000_000_000_000) return val; // ms
+    if (val > 100_000_000) return val * 1000; // seconds
+    return val;
+  }
+
+  // Handle string
+  if (typeof val === "string") {
+    // If it's a numeric string, parse it first
+    if (/^\d+(\.\d+)?$/.test(val)) {
+      return parseTimestamp(parseFloat(val));
+    }
+    // Otherwise try as Date string
+    const d = new Date(val).getTime();
+    if (!isNaN(d) && d > 0) return d;
+  }
+
+  return 0;
+}
+
+function toIso(ms: number) {
+  if (!ms || ms <= 0) return new Date(0).toISOString();
+  return new Date(ms).toISOString();
 }
 
 const API_PORT = 3000;
@@ -191,6 +233,9 @@ function mapDevice(device: BackendDevice): Device
     name = "Device " + mac;
   }
 
+  const lastSeenMs = parseTimestamp(device.last_seen);
+  const firstSeenMs = parseTimestamp(device.first_seen);
+
   return {
     id: device.id,
     name: name,
@@ -199,10 +244,12 @@ function mapDevice(device: BackendDevice): Device
     hostname: hostname,
     vendor: (device as any).vendor ?? null,
     trusted: true,
-    firstSeen: toIso(device.first_seen),
-    lastSeen: toIso(device.last_seen),
+    firstSeen: toIso(firstSeenMs),
+    lastSeen: toIso(lastSeenMs),
+    lastSeenMs: lastSeenMs,
     riskScore: device.risk_score,
-    status: device.status
+    status: device.status,
+    role: (device.role as DeviceRole) ?? "unknown",
   };
 }
 
@@ -281,21 +328,45 @@ const evidenceLabelMap: { [key: string]: string } = {
   suspicious_connections: "Suspicious Connections",
   ids_alerts: "IDS Alerts",
   risk_score: "Risk Score",
-  status: "Status",
   reason: "Reason",
   severity: "Severity",
-  confidence: "Confidence",
   summary: "Summary",
   previousBaseline: "Previous Baseline",
   event: "Event",
   anomalies: "Anomalies",
-  ids_context: "IDS Context"
+  ids_context: "IDS Context",
+  // Detection evidence fields
+  evidence: "Detection Evidence",
+  source_module: "Detection Module",
+  // Anomaly detection fields
+  anomaly_type: "Anomaly Type",
+  current_connections: "Connections (Current)",
+  current_bytes: "Bytes Sent (Current)",
+  baseline_mean: "Baseline Average",
+  baseline_stddev: "Baseline Std Dev",
+  z_score: "Deviation Score",
+  device_ip: "Device IP",
+  new_destination_count: "New Destinations",
+  known_destination_count: "Known Destinations",
+  new_destinations: "New Destination IPs",
+  sample_destinations: "Example New IPs",
+  top_port_fanout_dest: "Scan Target IP",
+  max_ports_single_dest: "Ports on Target",
+  max_connections_single_dest: "Connections to Target",
+  unique_ports: "Unique Ports",
+  connections: "Total Connections",
+  scan_candidates: "Scan Targets",
 };
 
+// Fields that are already surfaced elsewhere in the UI or are implementation details
 const EVIDENCE_SKIP_KEYS = new Set([
   "id", "device_id", "source_event_id",
   "window_start", "window_end",
-  "created_at", "updated_at", "resolved_at"
+  "created_at", "updated_at", "resolved_at",
+  // Edge alert wrapper fields already shown in dedicated UI sections
+  "title", "explanation", "recommended_action",
+  "related_event_ids", "recommended_enforcement",
+  "confidence", "status", "metadata",
 ]);
 
 function isEpochMs(v: unknown): v is number {
@@ -345,9 +416,25 @@ function mapEvidence(evidence: string | null): string[]
           for (const innerKey in value as Record<string, unknown>) {
             if (EVIDENCE_SKIP_KEYS.has(innerKey)) continue;
             const innerLabel = evidenceLabelMap[innerKey] || innerKey;
-            const formatted = formatScalar((value as any)[innerKey]);
-            if (formatted !== null) {
-              result.push(label + " · " + innerLabel + ": " + formatted);
+            const innerValue = (value as any)[innerKey];
+            if (Array.isArray(innerValue)) {
+              result.push(label + " · " + innerLabel + ": " + innerValue.length + " item(s)");
+            } else if (typeof innerValue === "object" && innerValue !== null) {
+              // Flatten one more level (e.g. evidence.details.*), dropping the
+              // intermediate key name for cleaner output
+              for (const deepKey in innerValue as Record<string, unknown>) {
+                if (EVIDENCE_SKIP_KEYS.has(deepKey)) continue;
+                const deepLabel = evidenceLabelMap[deepKey] || deepKey;
+                const formatted = formatScalar((innerValue as any)[deepKey]);
+                if (formatted !== null) {
+                  result.push(label + " · " + deepLabel + ": " + formatted);
+                }
+              }
+            } else {
+              const formatted = formatScalar(innerValue);
+              if (formatted !== null) {
+                result.push(label + " · " + innerLabel + ": " + formatted);
+              }
             }
           }
         } else {
@@ -372,7 +459,7 @@ function mapEvidence(evidence: string | null): string[]
 /**
  * Maps backend alert into frontend alert shape
  */
-function mapAlert(alert: BackendAlert): Alert 
+function mapAlert(alert: BackendAlert): Alert
 {
   let deviceId = alert.device_id;
   let explanation = alert.explanation;
@@ -381,10 +468,25 @@ function mapAlert(alert: BackendAlert): Alert
   {
     deviceId = "";
   }
-  
+
   if (!explanation)
   {
     explanation = "No explanation available.";
+  }
+
+  const createdMs = parseTimestamp(alert.created_at);
+
+  // For edge alerts, extract the recommended_action the detection module wrote
+  let recommendedAction: string | undefined;
+  if (alert.type === "edge_alert" && alert.evidence) {
+    try {
+      const evidenceData = JSON.parse(alert.evidence);
+      if (typeof evidenceData.recommended_action === "string" && evidenceData.recommended_action.trim()) {
+        recommendedAction = evidenceData.recommended_action.trim();
+      }
+    } catch {
+      // ignore parse errors
+    }
   }
 
   return {
@@ -394,13 +496,15 @@ function mapAlert(alert: BackendAlert): Alert
     title: alert.title,
     plainEnglish: explanation,
     evidence: mapEvidence(alert.evidence),
-    timestamp: toIso(alert.created_at),
+    timestamp: toIso(createdMs),
+    timestampMs: createdMs,
     type: alert.type,
     confidence: alert.confidence,
     sourceLabel: mapSourceLabel(alert.type),
     status: alert.status,
-    updatedAt: toIso(alert.updated_at),
-    resolvedAt: alert.resolved_at ? toIso(alert.resolved_at) : null
+    updatedAt: toIso(parseTimestamp(alert.updated_at)),
+    resolvedAt: alert.resolved_at ? toIso(parseTimestamp(alert.resolved_at)) : null,
+    recommendedAction,
   };
 }
 
@@ -425,46 +529,46 @@ function mapEnforcementAction(action: BackendEnforcementAction): EnforcementActi
 /**
  * GET helper
  */
-async function httpGet<T>(path: string): Promise<T> 
+async function httpGet<T>(path: string): Promise<T>
 {
   let url = baseUrl() + path;
-  let headers: any = 
+  let headers: any =
   {
     "Content-Type": "application/json"
   };
 
-  if (memoryToken) 
+  if (memoryToken)
   {
     headers["Authorization"] = "Bearer " + memoryToken;
   }
 
-  let res = await fetch(url, {method: "GET", headers: headers});
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30000); // 30s timeout
 
-  if (!res.ok)
-  {
-    let text = "";
+  try {
+    let res = await fetch(url, {method: "GET", headers: headers, signal: controller.signal});
 
-    try {
-      text = await res.text();
-    } 
-    catch {
-      text = "";
+    if (!res.ok)
+    {
+      let text = "";
+      try { text = await res.text(); } catch { text = ""; }
+      throw new Error("HTTP " + res.status + " " + path + " " + text);
     }
 
-    throw new Error("HTTP " + res.status + " " + path + " " + text);
+    let data = await res.json();
+    return data as T;
+  } finally {
+    clearTimeout(timer);
   }
-
-  let data = await res.json();
-  return data as T;
 }
 
 /**
  * POST helper
  */
-async function httpPost<T>(path: string, body?: unknown): Promise<T> 
+async function httpPost<T>(path: string, body?: unknown): Promise<T>
 {
   let url = baseUrl() + path;
-  let headers: any = 
+  let headers: any =
   {
     "Content-Type": "application/json"
   };
@@ -485,24 +589,73 @@ async function httpPost<T>(path: string, body?: unknown): Promise<T>
     options.body = JSON.stringify(body);
   }
 
-  let res = await fetch(url, options);
-    
-  if (!res.ok) 
-  {
-    let text = "";
-    
-    try {
-      text = await res.text();
-    } 
-    catch {
-      text = "";
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30000); // 30s timeout
+  options.signal = controller.signal;
+
+  try {
+    let res = await fetch(url, options);
+
+    if (!res.ok)
+    {
+      let text = "";
+      try { text = await res.text(); } catch { text = ""; }
+      throw new Error("HTTP " + res.status + " " + path + " " + text);
     }
 
-    throw new Error("HTTP " + res.status + " " + path + " " + text);
+    let data = await res.json();
+    return data as T;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * PATCH helper
+ */
+async function httpPatch<T>(path: string, body?: unknown): Promise<T>
+{
+  let url = baseUrl() + path;
+  let headers: any =
+  {
+    "Content-Type": "application/json"
+  };
+
+  if (memoryToken)
+  {
+    headers["Authorization"] = "Bearer " + memoryToken;
   }
 
-  let data = await res.json();
-  return data as T;
+  let options: any =
+  {
+    method: "PATCH",
+    headers: headers
+  };
+
+  if (body)
+  {
+    options.body = JSON.stringify(body);
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30000);
+  options.signal = controller.signal;
+
+  try {
+    let res = await fetch(url, options);
+
+    if (!res.ok)
+    {
+      let text = "";
+      try { text = await res.text(); } catch { text = ""; }
+      throw new Error("HTTP " + res.status + " " + path + " " + text);
+    }
+
+    let data = await res.json();
+    return data as T;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
@@ -561,6 +714,11 @@ export const api = {
     let row = await httpGet<BackendDevice>("/devices/" + id);
     let device = mapDevice(row);
     return device;
+  },
+
+  updateDeviceRole: async (id: string, role: DeviceRole): Promise<Device> => {
+    let row = await httpPatch<BackendDevice>("/devices/" + id, { role });
+    return mapDevice(row);
   },
 
   /**
@@ -629,7 +787,7 @@ export const api = {
  * Opens Websocket connection
  */
   connectRealtime: () => {
-    if (ws) 
+    if (ws)
     {
       return;
     }
@@ -637,12 +795,19 @@ export const api = {
     ws = new WebSocket(wsUrl());
 
     ws.onopen = () => {
+      _reconnectDelay = 1000; // reset backoff on successful connect
       listeners.forEach((listener) => listener({ type: "WS_OPEN" }));
     };
 
     ws.onclose = () => {
       listeners.forEach((listener) => listener({ type: "WS_CLOSED" }));
       ws = null;
+      // reconnect with exponential backoff (1s → 2s → 4s … max 30s)
+      _reconnectTimer = setTimeout(() => {
+        _reconnectTimer = null;
+        _reconnectDelay = Math.min(_reconnectDelay * 2, MAX_RECONNECT_DELAY);
+        api.connectRealtime();
+      }, _reconnectDelay);
     };
 
     ws.onerror = () => {
@@ -694,7 +859,21 @@ export const api = {
           listener({
             type: "ENFORCEMENT_UPDATED",
             payload: action
-      });
+          });
+        });
+
+        return;
+      }
+
+      if (parsedMessage.event === "device.seen" && parsedMessage.payload)
+      {
+        let device = mapDevice(parsedMessage.payload as BackendDevice);
+
+        listeners.forEach((listener) => {
+          listener({
+            type: "DEVICE_SEEN",
+            payload: device
+          });
         });
 
         return;
@@ -708,18 +887,21 @@ export const api = {
           });
           });
         } catch (error) {
+          console.warn("WebSocket message parse error:", error);
         }
-     };  
+     };
   },
 
   /**
-   * Closes the Websocket connection
+   * Closes the Websocket connection and cancels any pending reconnect
    */
   disconnectRealtime: () => {
-    if (ws) 
-    {
-      ws.close();
+    if (_reconnectTimer) {
+      clearTimeout(_reconnectTimer);
+      _reconnectTimer = null;
     }
+    _reconnectDelay = 1000;
+    if (ws) ws.close();
     ws = null;
   },
 

@@ -159,6 +159,7 @@ export function findRecentActiveAlert(
  */
 export function refreshAlert(id: string, patch: {
     title?: string;
+    severity?: string;
     explanation?: string;
     evidence?: string;
     confidence?: number;
@@ -179,6 +180,7 @@ export function refreshAlert(id: string, patch: {
     const nextAlert: AlertRecord = {
         ...existing,
         title: patch.title ?? existing.title,
+        severity: patch.severity ?? existing.severity,
         explanation: patch.explanation ?? existing.explanation,
         evidence: patch.evidence ?? existing.evidence,
         confidence: patch.confidence ?? existing.confidence,
@@ -191,6 +193,7 @@ export function refreshAlert(id: string, patch: {
     db.prepare(`
         UPDATE alerts
         SET title = ?,
+            severity = ?,
             explanation = ?,
             evidence = ?,
             confidence = ?,
@@ -200,6 +203,7 @@ export function refreshAlert(id: string, patch: {
         WHERE id = ?
     `).run(
         nextAlert.title,
+        nextAlert.severity,
         nextAlert.explanation,
         nextAlert.evidence,
         nextAlert.confidence,
