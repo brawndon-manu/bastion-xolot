@@ -81,7 +81,11 @@ export function broadcast(event: string, payload: unknown) {
      */
     for (const client of wss.clients) {
         if (client.readyState === WebSocket.OPEN) {
-            client.send(message);
+            try {
+                client.send(message);
+            } catch (err) {
+                console.error("WebSocket send failed for client:", err);
+            }
         }
     }
 }

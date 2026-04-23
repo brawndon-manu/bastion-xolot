@@ -37,7 +37,7 @@ const devicesSlice = createSlice({
       let device: Device = action.payload;
       let index = state.items.findIndex((x) => x.id === device.id);
 
-      if (index >= 0) 
+      if (index >= 0)
       {
         state.items[index] = device;
       }
@@ -45,7 +45,13 @@ const devicesSlice = createSlice({
       {
         state.items.unshift(device);
       }
-    }
+    },
+    deviceUpdated: (state, action: { payload: Device }) => {
+      const index = state.items.findIndex((x) => x.id === action.payload.id);
+      if (index >= 0) {
+        state.items[index] = action.payload;
+      }
+    },
   },
   extraReducers: (builder) => {
     builder.addCase(loadDevices.pending, (state) => {
@@ -63,7 +69,7 @@ const devicesSlice = createSlice({
   }
 });
 
-export const { deviceSeen, setNickname } = devicesSlice.actions;
+export const { deviceSeen, setNickname, deviceUpdated } = devicesSlice.actions;
 
 export const selectDeviceById = (state: RootState, id: string) =>
   state.devices.items.find((d) => d.id === id);

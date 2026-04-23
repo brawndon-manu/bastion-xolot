@@ -142,6 +142,7 @@ function applyMigrations() {
         "ALTER TABLE anomalies ADD COLUMN updated_at INTEGER",
         "ALTER TABLE anomalies ADD COLUMN resolved_at INTEGER",
         "ALTER TABLE devices ADD COLUMN vendor TEXT",
+        "ALTER TABLE devices ADD COLUMN role TEXT DEFAULT 'unknown'",
     ];
 
     for (const migration of migrations) {
@@ -168,6 +169,63 @@ function applyMigrations() {
         UPDATE anomalies
         SET updated_at = COALESCE(updated_at, created_at),
             resolved_at = CASE WHEN status = 'resolved' THEN COALESCE(resolved_at, updated_at, created_at) ELSE resolved_at END
+    `);
+
+    // Clamp legacy rows created before backend risk scores were bounded.
+    db.exec(`
+        UPDATE devices
+        SET risk_score = MIN(MAX(COALESCE(risk_score, 0), 0), 100)
+    `);
+
+    // Reclassify noisy IDS signatures that older code stored as high severity.
+    db.exec(`
+        UPDATE alerts
+        SET severity = 'low',
+            confidence = MIN(COALESCE(confidence, 0.45), 0.45),
+            updated_at = COALESCE(updated_at, created_at)
+        WHERE type = 'ids_alert'
+          AND LOWER(COALESCE(severity, '')) = 'high'
+          AND (
+              LOWER(COALESCE(title, '')) LIKE '%suricata stream%'
+              OR LOWER(COALESCE(title, '')) LIKE '%et info %'
+              OR LOWER(COALESCE(title, '')) LIKE '%observed %'
+          )
+    `);
+
+    // Older correlation logic promoted every multi-signal match to high/0.98.
+    // Reset active rows so the app does not keep showing stale inflated risk.
+    db.exec(`
+        UPDATE alerts
+        SET severity = 'medium',
+            confidence = MIN(COALESCE(confidence, 0.78), 0.78),
+            updated_at = COALESCE(updated_at, created_at)
+        WHERE type = 'correlated_threat'
+          AND LOWER(COALESCE(severity, '')) = 'high'
+          AND COALESCE(confidence, 0) >= 0.98
+    `);
+
+    // Direct edge-built alerts used to bypass backend severity normalization.
+    db.exec(`
+        UPDATE alerts
+        SET severity = CASE
+                WHEN LOWER(COALESCE(title, '')) LIKE '%suricata stream%' THEN 'low'
+                WHEN LOWER(COALESCE(title, '')) LIKE '%session traversal utilities for nat%' THEN 'low'
+                WHEN LOWER(COALESCE(title, '')) LIKE '%stun binding%' THEN 'low'
+                WHEN LOWER(COALESCE(title, '')) LIKE '%et info observed%' THEN 'low'
+                WHEN LOWER(COALESCE(title, '')) LIKE '%discord service domain%' THEN 'low'
+                ELSE severity
+            END,
+            confidence = CASE
+                WHEN LOWER(COALESCE(title, '')) LIKE '%suricata stream%' THEN MIN(COALESCE(confidence, 0.45), 0.45)
+                WHEN LOWER(COALESCE(title, '')) LIKE '%session traversal utilities for nat%' THEN MIN(COALESCE(confidence, 0.45), 0.45)
+                WHEN LOWER(COALESCE(title, '')) LIKE '%stun binding%' THEN MIN(COALESCE(confidence, 0.45), 0.45)
+                WHEN LOWER(COALESCE(title, '')) LIKE '%et info observed%' THEN MIN(COALESCE(confidence, 0.45), 0.45)
+                WHEN LOWER(COALESCE(title, '')) LIKE '%discord service domain%' THEN MIN(COALESCE(confidence, 0.45), 0.45)
+                ELSE confidence
+            END,
+            updated_at = COALESCE(updated_at, created_at)
+        WHERE type = 'edge_alert'
+          AND LOWER(COALESCE(severity, '')) = 'high'
     `);
 }
 
