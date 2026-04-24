@@ -594,6 +594,15 @@ export const api = {
   },
 
   /**
+   * Fetches a level-appropriate explanation for an alert.
+   * Only called for active (unresolved) alerts to avoid unnecessary requests.
+   */
+  getAlertExplanation: async (id: string, level: "nerd" | "standard" | "grandma"): Promise<string> => {
+    const result = await httpGet<{ explanation: string }>(`/alerts/${id}/explain?level=${level}`);
+    return result.explanation;
+  },
+
+  /**
    * Requests manual quarantine of a device
    */
   quarantineDevice: async (id: string, reason = "manual_quarantine"): Promise<EnforcementAction> => {

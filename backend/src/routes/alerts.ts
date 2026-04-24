@@ -1,6 +1,10 @@
 import { Router } from "express";
 import { listAlerts, getAlert, refreshAlert } from "../services/alert_service";
+import { explainSecurityEvent, TranslationLevel } from "../services/plain_english";
+import { getDevice } from "../services/device_service";
 import { getDb } from "../db/db";
+
+const VALID_LEVELS = new Set<TranslationLevel>(["nerd", "standard", "grandma"]);
 
 /**
  * Router responsible for alert retrieval endpoints.
@@ -103,6 +107,51 @@ alertsRouter.post("/clear-active", async (req, res) => {
         res.json({ cleared: result.changes });
     } catch (err) {
         console.error("Failed to clear active alerts:", err);
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
+
+/**
+ * GET /alerts/:id/explain?level=nerd|standard|grandma
+ *
+ * Returns a translation-level-aware explanation for an alert.
+ * Only generates for active (unresolved) alerts — resolved alerts
+ * return their stored explanation to avoid unnecessary processing.
+ */
+alertsRouter.get("/:id/explain", async (req, res) => {
+    try {
+        const id = req.params.id;
+        const rawLevel = req.query.level as string;
+        const level: TranslationLevel = VALID_LEVELS.has(rawLevel as TranslationLevel)
+            ? (rawLevel as TranslationLevel)
+            : "standard";
+
+        const alert = await getAlert(id);
+        if (!alert) {
+            return res.status(404).json({ error: "Alert not found" });
+        }
+
+        if (alert.status === "resolved") {
+            return res.json({ explanation: alert.explanation });
+        }
+
+        const device = alert.device_id ? getDevice(alert.device_id) : undefined;
+        const deviceContext = device ? {
+            hostname: device.hostname,
+            vendor: device.vendor,
+            ip_address: device.ip_address,
+            risk_score: device.risk_score,
+            status: device.status,
+            first_seen: device.first_seen,
+        } : undefined;
+
+        const evidenceData = alert.evidence ? JSON.parse(alert.evidence) : {};
+        const explanation = await explainSecurityEvent(alert.type, evidenceData, level, deviceContext);
+
+        res.json({ explanation });
+
+    } catch (err) {
+        console.error("Failed to generate explanation:", err);
         res.status(500).json({ error: "Internal server error" });
     }
 });
