@@ -95,7 +95,12 @@ def reconcile_once() -> dict:
     if not all_ops:
         tx = {
             "device": {"mac": None},
-            "transition": {"from": "MIXED", "to": "MIXED", "reason": "reconcile", "actor": "system"},
+            "transition": {
+                "from": "MIXED",
+                "to": "MIXED",
+                "reason": "reconcile",
+                "actor": "system",
+            },
             "gates": {"allow_enforcement": enforcement_allowed()},
             "plan": {"nft": {"table": "inet bastion", "ops": []}},
             "result": {"status": "NOOP", "error": None},
@@ -106,7 +111,12 @@ def reconcile_once() -> dict:
     if len(all_ops) > MAX_OPS:
         tx = {
             "device": {"mac": None},
-            "transition": {"from": "MIXED", "to": "MIXED", "reason": "reconcile", "actor": "system"},
+            "transition": {
+                "from": "MIXED",
+                "to": "MIXED",
+                "reason": "reconcile",
+                "actor": "system",
+            },
             "gates": {"allow_enforcement": enforcement_allowed()},
             "plan": {"nft": {"table": "inet bastion", "ops": all_ops}},
             "result": {"status": "FAILED", "error": f"too many ops: {len(all_ops)}"},
@@ -142,7 +152,12 @@ def reconcile_once() -> dict:
 
     tx = {
         "device": {"mac": None},
-        "transition": {"from": "MIXED", "to": "MIXED", "reason": "reconcile", "actor": "system"},
+        "transition": {
+            "from": "MIXED",
+            "to": "MIXED",
+            "reason": "reconcile",
+            "actor": "system",
+        },
         "gates": {
             "allow_enforcement": enforcement_allowed(),
             "operator_enforcement_allowed": operator_enforcement_allowed(),
