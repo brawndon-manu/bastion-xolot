@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, ScrollView, StyleSheet, RefreshControl, Image } from "react-native";
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "../state/store";
-import { loadDevices } from "../state/slices/devicesSlice";
+import { loadDevices, deviceSeen } from "../state/slices/devicesSlice";
 import { loadAlerts, alertUpsert, alertResolved } from "../state/slices/alertsSlice";
 import Icon from "react-native-vector-icons/Feather";
 import { api, HealthStatus } from "../api/client";
@@ -57,7 +57,7 @@ export default function DashboardScreen() {
       if (showSpinner) setManualRefreshing(true);
       setHealth(await api.health());
     } catch {
-      setHealth(null);
+      // keep last known health state on transient errors rather than flipping to OFFLINE
     } finally {
       if (showSpinner) setManualRefreshing(false);
     }
@@ -73,6 +73,7 @@ export default function DashboardScreen() {
       if (!event) return;
       if (event.type === "ALERT_UPSERT")        dispatch(alertUpsert(event.payload));
       if (event.type === "ALERT_RESOLVED")      dispatch(alertResolved(event.payload));
+      if (event.type === "DEVICE_SEEN")         dispatch(deviceSeen(event.payload));
       if (event.type === "ENFORCEMENT_UPDATED") { dispatch(loadDevices()); loadHealth(); }
       if (event.type === "WS_EVENT" && event.event === "event.received") dispatch(loadDevices());
     });

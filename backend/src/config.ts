@@ -88,11 +88,13 @@ const ANOMALY_RESOLUTION_WINDOW_MS = parseInt(
 const DESIRED_STATE_PATH = process.env.DESIRED_STATE_PATH ||
     "/var/lib/bastion/enforcement/desired_state.json";
 
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || undefined;
 
-// 0 = disabled entirely; any positive number = max AI calls per calendar day
+// Maximum Claude API calls allowed per calendar day.
+// Prevents a sudden alert flood from generating unexpected costs.
+// Set AI_DAILY_CALL_LIMIT=0 to disable AI explanations entirely.
 const AI_DAILY_CALL_LIMIT = parseInt(
-    process.env.AI_DAILY_CALL_LIMIT || "50",
+    process.env.AI_DAILY_CALL_LIMIT || "1000",
     10
 );
 

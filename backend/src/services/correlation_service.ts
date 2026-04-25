@@ -23,7 +23,7 @@ import { config } from "../config";
 
 /**
  * Results returned by the correlation engine
- * 
+ *
  * Represents EVERYTHING that changed as a result of processing an event.
  * This allows:
  *  - API responses
@@ -47,6 +47,87 @@ type AlertEmission = {
     alert: AlertRecord;
     created: boolean;
 };
+
+type AlertSeverity = "low" | "medium" | "high";
+
+const IDS_SEVERITY_PROFILE: Record<AlertSeverity, { riskDelta: number; confidence: number }> = {
+    low: { riskDelta: 3, confidence: 0.45 },
+    medium: { riskDelta: 8, confidence: 0.65 },
+    high: { riskDelta: 18, confidence: 0.82 },
+};
+
+const ANOMALY_SEVERITY_PROFILE: Record<AlertSeverity, { riskDelta: number; confidence: number }> = {
+    low: { riskDelta: 5, confidence: 0.5 },
+    medium: { riskDelta: 12, confidence: 0.68 },
+    high: { riskDelta: 20, confidence: 0.86 },
+};
+
+const SUSPICIOUS_CONNECTION_PROFILE: Record<AlertSeverity, { riskDelta: number; confidence: number }> = {
+    low: { riskDelta: 6, confidence: 0.55 },
+    medium: { riskDelta: 12, confidence: 0.72 },
+    high: { riskDelta: 20, confidence: 0.88 },
+};
+
+function normalizeAlertSeverity(value: unknown): AlertSeverity {
+    const severity = typeof value === "string" ? value.toLowerCase() : "";
+    if (severity === "high" || severity === "medium" || severity === "low") {
+        return severity;
+    }
+    return "medium";
+}
+
+function isInformationalIdsSignal(event: Record<string, unknown>): boolean {
+    const signature = String(event.signature || event.reason || "").toLowerCase();
+    const category = String(event.category || "").toLowerCase();
+
+    return (
+        signature.startsWith("et info ") ||
+        signature.includes("observed ") ||
+        signature.includes("suricata stream") ||
+        category.includes("not suspicious") ||
+        category.includes("generic protocol command decode")
+    );
+}
+
+function classifyIdsSeverity(event: Record<string, unknown>): AlertSeverity {
+    const reportedSeverity = normalizeAlertSeverity(event.severity);
+
+    if (isInformationalIdsSignal(event)) {
+        return reportedSeverity === "high" ? "medium" : "low";
+    }
+
+    return reportedSeverity;
+}
+
+function classifySuspiciousConnectionSeverity(event: Record<string, unknown>): AlertSeverity {
+    const reportedSeverity = normalizeAlertSeverity(event.severity);
+    const text = [
+        event.reason,
+        event.category,
+        event.threat_type,
+        event.destination,
+        event.dest_ip,
+        event.hostname,
+    ].map((value) => String(value || "").toLowerCase()).join(" ");
+
+    if (
+        reportedSeverity === "high" ||
+        text.includes("malware") ||
+        text.includes("command-and-control") ||
+        text.includes("command and control") ||
+        text.includes("botnet") ||
+        text.includes("phishing") ||
+        text.includes("exploit")
+    ) {
+        return "high";
+    }
+
+    if (reportedSeverity === "low") {
+        return "low";
+    }
+
+    return "medium";
+}
 
 function toDeviceContext(
     device: Device | undefined,
@@ -80,7 +161,7 @@ function safeParseStoredEvent(event: StoredEvent): Record<string, unknown> {
 
 /**
  * Creates or refreshes an alert based on a stable fingerprint.
- * 
+ *
  * This reduces alert spam while still updating the latest evidence and confidence.
  */
 async function createOrRefreshAlert(data: {
@@ -108,6 +189,7 @@ async function createOrRefreshAlert(data: {
     if (existing) {
         const refreshed = refreshAlert(existing.id, {
             title: data.title,
+            severity: data.severity,
             evidence: data.evidence,
             confidence: Math.max(existing.confidence ?? 0, data.confidence),
         });
@@ -136,22 +218,29 @@ async function createOrRefreshAlert(data: {
 
 /**
  * Creates alert for behavioral anomalies
- * 
- * Used when anomaly detection system flags unsual behavior
+ *
+ * Used when anomaly detection system flags unusual behavior
  */
 async function createBehavioralAlert(
     deviceId: string,
     anomaly: StoredAnomaly,
     device?: Device
 ): Promise<AlertEmission> {
+    const severity = normalizeAlertSeverity(anomaly.severity);
+    const profile = ANOMALY_SEVERITY_PROFILE[severity];
+    const confidence = Math.min(
+        profile.confidence + Math.max(anomaly.score - 20, 0) * 0.004,
+        severity === "high" ? 0.9 : severity === "medium" ? 0.78 : 0.6
+    );
+
     return createOrRefreshAlert({
         device_id: deviceId,
         type: anomaly.type,
-        severity: anomaly.severity,
+        severity,
         title: "Behavioral anomaly detected",
         explanationFactory: async () => `${await explainSecurityEvent("anomaly", anomaly, "standard", toDeviceContext(device))} ${anomaly.summary}.`,
         evidence: anomaly.evidence,
-        confidence: Math.min(0.99, anomaly.score / 50),
+        confidence,
         fingerprintParts: [anomaly.type],
     });
 }
@@ -159,23 +248,83 @@ async function createBehavioralAlert(
 function calculateCorrelatedConfidence(
     event: Record<string, unknown>,
     anomalies: StoredAnomaly[],
-    recentIdsSignals: StoredEvent[]
+    recentIdsSignals: StoredEvent[],
+    severity: AlertSeverity
 ): number {
-    let confidence = 0.78;
+    const baseConfidence: Record<AlertSeverity, number> = {
+        low: 0.52,
+        medium: 0.68,
+        high: 0.84,
+    };
+    const maxConfidence: Record<AlertSeverity, number> = {
+        low: 0.62,
+        medium: 0.78,
+        high: 0.9,
+    };
 
-    if (event.type === "ids_alert") {
-        confidence += 0.08;
+    const supportCount = anomalies.length + recentIdsSignals.length + (event.type === "ids_alert" ? 1 : 0);
+    const confidence = baseConfidence[severity] + Math.min(supportCount, 3) * 0.03;
+
+    return Math.min(maxConfidence[severity], confidence);
+}
+
+function eventSeverity(event: Record<string, unknown>): AlertSeverity {
+    if (event.type === "suspicious_connection") {
+        return classifySuspiciousConnectionSeverity(event);
     }
 
-    confidence += Math.min(anomalies.length, 3) * 0.05;
-    confidence += Math.min(recentIdsSignals.length, 3) * 0.03;
+    if (event.type === "ids_alert") {
+        return classifyIdsSeverity(event);
+    }
 
-    return Math.min(0.98, confidence);
+    if (event.type === "dns_block") {
+        return "medium";
+    }
+
+    return normalizeAlertSeverity(event.severity);
+}
+
+function storedEventSeverity(signal: StoredEvent): AlertSeverity {
+    const data = safeParseStoredEvent(signal);
+    if (signal.type === "suspicious_connection" || data.type === "suspicious_connection") {
+        return classifySuspiciousConnectionSeverity(data);
+    }
+
+    if (signal.type === "ids_alert" || data.type === "ids_alert") {
+        return classifyIdsSeverity(data);
+    }
+
+    return normalizeAlertSeverity(data.severity);
+}
+
+function calculateCorrelatedSeverity(
+    event: Record<string, unknown>,
+    anomalies: StoredAnomaly[],
+    recentIdsSignals: StoredEvent[]
+): AlertSeverity {
+    const severities = [
+        eventSeverity(event),
+        ...anomalies.map((anomaly) => normalizeAlertSeverity(anomaly.severity)),
+        ...recentIdsSignals.map(storedEventSeverity),
+    ];
+
+    const highCount = severities.filter((severity) => severity === "high").length;
+    const mediumCount = severities.filter((severity) => severity === "medium").length;
+
+    if (highCount >= 2 || (highCount >= 1 && mediumCount >= 1)) {
+        return "high";
+    }
+
+    if (highCount === 1 || mediumCount >= 1) {
+        return "medium";
+    }
+
+    return "low";
 }
 
 /**
  * Creates alert when multiple signals indicate a stronger threat
- * 
+ *
  * This is TRUE correlation (Phase 5):
  *  - Combines anomalies + events
  *  - Produces higher-confidence alert
@@ -187,7 +336,8 @@ async function createCorrelatedThreatAlert(
     recentIdsSignals: StoredEvent[],
     device?: Device
 ): Promise<AlertEmission> {
-    const confidence = calculateCorrelatedConfidence(event, anomalies, recentIdsSignals);
+    const severity = calculateCorrelatedSeverity(event, anomalies, recentIdsSignals);
+    const confidence = calculateCorrelatedConfidence(event, anomalies, recentIdsSignals, severity);
     const idsEvidence = recentIdsSignals.slice(0, 3).map((signal) => ({
         id: signal.id,
         type: signal.type,
@@ -198,7 +348,7 @@ async function createCorrelatedThreatAlert(
     return createOrRefreshAlert({
         device_id: deviceId,
         type: "correlated_threat",
-        severity: "high",
+        severity,
         title: "Correlated threat behavior detected",
         explanationFactory: () => explainSecurityEvent(
             "correlated_threat",
@@ -212,12 +362,7 @@ async function createCorrelatedThreatAlert(
             ids_context: idsEvidence,
         }),
         confidence,
-        fingerprintParts: [
-            "correlated_threat",
-            String(event.type),
-            anomalies.map((anomaly) => anomaly.id).join(","),
-            idsEvidence.map((signal) => signal.id).join(","),
-        ],
+        fingerprintParts: ["correlated_threat"],
     });
 }
 
@@ -225,9 +370,9 @@ async function createCorrelatedThreatAlert(
  * ==================================
  * MAIN CORRELATION ENGINE
  * ==================================
- * 
+ *
  * This is the core intelligence layer of Bastion Xolot.
- * 
+ *
  * Responsibilities:
  *  - Ingest event
  *  - Detect suspicious behavior
@@ -240,7 +385,7 @@ async function createCorrelatedThreatAlert(
 export async function processEvent(event: Record<string, unknown>, deviceId: string): Promise<CorrelationResult> {
     /**
      * Persist event and run anomaly detection
-     * 
+     *
      * ingestEvent:
      *  - Stores raw event
      *  - Runs anomaly detection
@@ -267,7 +412,7 @@ export async function processEvent(event: Record<string, unknown>, deviceId: str
      * ==============================
      * LIFECYCLE CLEANUP
      * ==============================
-     * 
+     *
      * Resolve stale anomalies and their linked alerts after a quiet period.
      */
     let resolvedAnomalies: StoredAnomaly[] = [];
@@ -311,15 +456,18 @@ export async function processEvent(event: Record<string, unknown>, deviceId: str
      * ==============================
      */
     if (event.type === "suspicious_connection") {
-        riskDelta = 20;
+        const connectionSeverity = classifySuspiciousConnectionSeverity(event);
+        const connectionProfile = SUSPICIOUS_CONNECTION_PROFILE[connectionSeverity];
+
+        riskDelta = connectionProfile.riskDelta;
         alertEmissions.push(await createOrRefreshAlert({
             device_id: deviceId,
             type: String(event.type),
-            severity: "high",
+            severity: connectionSeverity,
             title: "Suspicious outbound connection detected",
             explanationFactory: async () => "A device initiated an outbound connection that matched a suspicious destination pattern.",
             evidence: JSON.stringify(event),
-            confidence: 0.9,
+            confidence: connectionProfile.confidence,
             fingerprintParts: [
                 event.type,
                 String(event.destination || event.dest_ip || event.hostname || "unknown"),
@@ -333,15 +481,18 @@ export async function processEvent(event: Record<string, unknown>, deviceId: str
      * ==============================
      */
     if (event.type === "ids_alert") {
-        riskDelta = 25;
+        const idsSeverity = classifyIdsSeverity(event);
+        const idsProfile = IDS_SEVERITY_PROFILE[idsSeverity];
+
+        riskDelta = idsProfile.riskDelta;
         alertEmissions.push(await createOrRefreshAlert({
             device_id: deviceId,
             type: String(event.type),
-            severity: "high",
+            severity: idsSeverity,
             title: `IDS Alert: ${event.signature || "Unknown threat"}`,
             explanationFactory: () => explainSecurityEvent("ids_alert", event, "standard", toDeviceContext(sourceDevice)),
             evidence: JSON.stringify(event),
-            confidence: 0.9,
+            confidence: idsProfile.confidence,
             fingerprintParts: [
                 event.type,
                 String(event.signature || event.reason || "unknown"),
@@ -356,7 +507,8 @@ export async function processEvent(event: Record<string, unknown>, deviceId: str
      * ==============================
      */
     if (ingestion.anomaly) {
-        riskDelta += ingestion.anomaly.score >= 40 ? 25 : 15;
+        const anomalySeverity = normalizeAlertSeverity(ingestion.anomaly.severity);
+        riskDelta += ANOMALY_SEVERITY_PROFILE[anomalySeverity].riskDelta;
         alertEmissions.push(await createBehavioralAlert(deviceId, ingestion.anomaly, sourceDevice));
     }
 
@@ -422,23 +574,28 @@ export async function processEvent(event: Record<string, unknown>, deviceId: str
         device.risk_score >= config.AUTO_QUARANTINE_THRESHOLD &&
         device.status !== "quarantined"
     ) {
-        enforcement = quarantineDevice(
-            deviceId,
-            "Risk score exceeded threshold",
-            {
-                initiated_by: "system",
-                evidence: JSON.stringify({
-                    event,
-                    recentAnomalies,
-                    recentIdsSignals: recentIdsSignals.map((signal) => ({
-                        id: signal.id,
-                        type: signal.type,
-                        timestamp: signal.timestamp,
-                    })),
-                    risk_score: device.risk_score,
-                }),
-            }
-        );
+        try {
+            enforcement = quarantineDevice(
+                deviceId,
+                "Risk score exceeded threshold",
+                {
+                    initiated_by: "system",
+                    evidence: JSON.stringify({
+                        event,
+                        recentAnomalies,
+                        recentIdsSignals: recentIdsSignals.map((signal) => ({
+                            id: signal.id,
+                            type: signal.type,
+                            timestamp: signal.timestamp,
+                        })),
+                        risk_score: device.risk_score,
+                    }),
+                }
+            );
+        } catch (err) {
+            // DB action was recorded; edge sync failed — log and continue correlation
+            console.error("Auto-quarantine edge sync failed for device", deviceId, err);
+        }
 
         // Refresh device state after enforcement
         device = getDevice(deviceId);

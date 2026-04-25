@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { buildAlertFingerprint, createAlert, findRecentActiveAlert, refreshAlert } from "../services/alert_service";
-import { ensureDeviceExists } from "../services/device_service";
+import { ensureDeviceExists, touchDevice } from "../services/device_service";
 import { broadcast } from "../realtime/websocket";
 import { processEvent } from "../services/correlation_service";
 import { logger } from "../utils/logger";
@@ -60,6 +60,45 @@ function readOptionalNumber(value: unknown): number | undefined {
     }
 
     return undefined;
+}
+
+function normalizeAlertSeverity(value: unknown): "low" | "medium" | "high" {
+    const severity = typeof value === "string" ? value.toLowerCase().trim() : "";
+    if (severity === "low" || severity === "medium" || severity === "high") {
+        return severity;
+    }
+    return "medium";
+}
+
+function isNoisyEdgeAlert(title: string, payload: Record<string, unknown>): boolean {
+    const text = [
+        title,
+        readOptionalString(payload.reason),
+        readOptionalString(payload.signature),
+        readOptionalString(payload.category),
+    ].filter(Boolean).join(" ").toLowerCase();
+
+    return (
+        text.includes("suricata stream") ||
+        text.includes("et info observed") ||
+        text.includes("session traversal utilities for nat") ||
+        text.includes("stun binding") ||
+        text.includes("discord service domain")
+    );
+}
+
+function normalizeEdgeAlertForStorage(alert: EdgeAlertPayload): { severity: "low" | "medium" | "high"; confidence: number } {
+    const requestedSeverity = normalizeAlertSeverity(alert.severity);
+    let severity = requestedSeverity;
+
+    if (isNoisyEdgeAlert(alert.title, alert)) {
+        severity = requestedSeverity === "high" ? "medium" : "low";
+    }
+
+    const suppliedConfidence = readOptionalNumber(alert.confidence);
+    const defaultConfidence = severity === "high" ? 0.82 : severity === "medium" ? 0.65 : 0.45;
+    const maxConfidence = severity === "high" ? 0.9 : severity === "medium" ? 0.78 : 0.6;
+    return { severity, confidence: Math.min(suppliedConfidence ?? defaultConfidence, maxConfidence) };
 }
 
 /**
@@ -324,16 +363,18 @@ eventsRouter.post("/", async (req, res) => {
     try {
         const directAlert = normalizeEdgeAlertPayload(req.body);
         if (directAlert.alert) {
-            const { device_id, severity, title, explanation } = directAlert.alert;
+            const { device_id, title, explanation } = directAlert.alert;
+            const normalizedAlert = normalizeEdgeAlertForStorage(directAlert.alert);
             const fingerprint = buildAlertFingerprint([device_id, "edge_alert", title]);
             const dedupWindowMs = 24 * 60 * 60 * 1000; // 24 hours — same condition shouldn't stack up all day
             const existing = findRecentActiveAlert(device_id, fingerprint, Date.now() - dedupWindowMs);
 
             if (existing) {
                 const refreshed = refreshAlert(existing.id, {
+                    severity: normalizedAlert.severity,
                     explanation,
                     evidence: JSON.stringify(req.body),
-                    confidence: Math.max(existing.confidence ?? 0, readOptionalNumber(req.body.confidence) ?? 0),
+                    confidence: normalizedAlert.confidence,
                 });
                 broadcast("alert.updated", refreshed);
                 return res.status(200).json({ alert: refreshed, accepted_as: "edge_alert" });
@@ -342,12 +383,12 @@ eventsRouter.post("/", async (req, res) => {
             const alert = createAlert({
                 device_id,
                 type: "edge_alert",
-                severity,
+                severity: normalizedAlert.severity,
                 title,
                 explanation,
                 evidence: JSON.stringify(req.body),
                 fingerprint,
-                confidence: readOptionalNumber(req.body.confidence),
+                confidence: normalizedAlert.confidence,
             });
 
             broadcast("alert.created", alert);
@@ -368,6 +409,11 @@ eventsRouter.post("/", async (req, res) => {
             hostname: event.hostname,
             vendor: event.vendor as string | undefined,
         });
+
+        touchDevice(device.id);
+
+        // Broadcast device seen for ANY event to keep UI online status accurate
+        broadcast("device.seen", device);
 
         // Process event through correlation engine.
         const result = await processEvent(event, device.id);

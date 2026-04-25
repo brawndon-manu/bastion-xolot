@@ -126,7 +126,14 @@ LOCAL_DB_PATH = os.getenv("BASTION_LOCAL_DB", "/var/lib/bastion-agent/agent.db")
 LOG_PATH = os.getenv("BASTION_LOG_PATH", "/var/log/bastion-agent.log")
 LOG_LEVEL = os.getenv("BASTION_LOG_LEVEL", "INFO")
 
+# Maximum number of undispatched events allowed in the queue.
+# When the cap is reached, the oldest undispatched events are dropped
+# to make room for new ones so the queue never grows unbounded.
 EVENT_QUEUE_MAX_SIZE = int(os.getenv("BASTION_QUEUE_MAX_SIZE", "10000"))
+
+# Events older than this many seconds are considered stale and will never
+# be dispatched to the backend. A 2-hour-old IDS alert has no operational
+# value and would only pollute device records and trigger unnecessary AI calls.
 EVENT_QUEUE_TTL_SECONDS = int(os.getenv("BASTION_QUEUE_TTL", "7200"))
 
 
@@ -191,10 +198,17 @@ def enforcement_allowed() -> bool:
 _device_roles_lock = threading.Lock()
 _device_roles_cache: dict[str, str] = {}
 _device_roles_last_fetch: float = 0.0
-_DEVICE_ROLES_TTL = 60.0
+_DEVICE_ROLES_TTL = 60.0  # seconds between polls
 
 
 def get_device_role(mac: str) -> str:
+    """
+    Returns the operator-assigned role for a device MAC address.
+
+    Checks PROTECTED_MACS first (always infrastructure regardless of backend).
+    Falls back to 'unknown' if the device isn't in the backend or the poll fails.
+    Refreshes the full device role cache at most every 60 seconds.
+    """
     global _device_roles_cache, _device_roles_last_fetch
 
     if mac.lower() in {m.lower() for m in PROTECTED_MACS}:
@@ -206,7 +220,6 @@ def get_device_role(mac: str) -> str:
                 url = f"{BACKEND_URL}/devices"
                 with urllib.request.urlopen(url, timeout=5) as resp:
                     import json as _json
-
                     devices = _json.loads(resp.read())
                 _device_roles_cache = {
                     d["mac_address"].lower(): d.get("role", "unknown")
@@ -215,7 +228,7 @@ def get_device_role(mac: str) -> str:
                 }
                 _device_roles_last_fetch = _time.monotonic()
             except Exception:
-                pass
+                pass  # keep cached value
 
     return _device_roles_cache.get(mac.lower(), "unknown")
 

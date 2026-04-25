@@ -5,13 +5,72 @@ import { RootStackParamList } from "../App";
 import DeviceCard from "../components/DeviceCard";
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "../state/store";
-import { loadDevices } from "../state/slices/devicesSlice";
+import { deviceSeen, loadDevices } from "../state/slices/devicesSlice";
 import { CompositeScreenProps } from "@react-navigation/native";
 import { BottomTabScreenProps } from "@react-navigation/bottom-tabs";
-import { api } from "../api/client";
+import { api, Device, ONLINE_THRESHOLD_MS, parseTimestamp } from "../api/client";
 import { T } from "../theme";
 
-const ONLINE_THRESHOLD_MS = 5 * 60 * 1000;
+const getDeviceTimestamp = (d: any): number => {
+  return d.lastSeenMs || parseTimestamp(d.lastSeen) || parseTimestamp(d.last_seen) || 0;
+};
+
+function compareIps(a: string, b: string): number {
+  const aParts = a.split(".").map(Number);
+  const bParts = b.split(".").map(Number);
+  for (let i = 0; i < 4; i++) {
+    const diff = (aParts[i] ?? 0) - (bParts[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+function sortNamedThenIp(devices: Device[], nicknames: Record<string, string>): Device[] {
+  const named: Device[] = [];
+  const ipOnly: Device[] = [];
+
+  for (const d of devices) {
+    if (nicknames[d.id] || d.hostname) {
+      named.push(d);
+    } else {
+      ipOnly.push(d);
+    }
+  }
+
+  named.sort((a, b) => {
+    const nameA = (nicknames[a.id] ?? a.hostname ?? a.ip).toLowerCase();
+    const nameB = (nicknames[b.id] ?? b.hostname ?? b.ip).toLowerCase();
+    return nameA.localeCompare(nameB);
+  });
+
+  ipOnly.sort((a, b) => compareIps(a.ip, b.ip));
+
+  return [...named, ...ipOnly];
+}
+
+function sortDevices(
+  devices: Device[],
+  nicknames: Record<string, string>,
+  latestSeenInData: number
+): Device[] {
+  const online: Device[] = [];
+  const offline: Device[] = [];
+
+  for (const d of devices) {
+    const ts = getDeviceTimestamp(d);
+    const isOnline = latestSeenInData > 0 && latestSeenInData - ts < ONLINE_THRESHOLD_MS;
+    if (isOnline) {
+      online.push(d);
+    } else {
+      offline.push(d);
+    }
+  }
+
+  return [
+    ...sortNamedThenIp(online, nicknames),
+    ...sortNamedThenIp(offline, nicknames),
+  ];
+}
 
 function MetricCard({ label, value, accent }: { label: string; value: string; accent: string }) {
   return (
@@ -35,11 +94,26 @@ const REFRESH_DEBOUNCE_MS = 60 * 1000;
 
 export default function DevicesScreen({ navigation }: Props) {
   const dispatch = useDispatch<AppDispatch>();
-  const { items, loading } = useSelector((state: RootState) => state.devices);
+  const { items, loading, nicknames } = useSelector((state: RootState) => state.devices);
   const lastRefresh = useRef<number>(0);
 
-  const sortedItems  = useMemo(() => [...items].sort((a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime()), [items]);
-  const onlineCount  = useMemo(() => items.filter((d) => Date.now() - new Date(d.lastSeen).getTime() < ONLINE_THRESHOLD_MS).length, [items]);
+  const latestSeenInData = useMemo(() => {
+    const timestamps = items.map(getDeviceTimestamp).filter((t) => t > 0);
+    return timestamps.length > 0 ? Math.max(...timestamps) : 0;
+  }, [items]);
+
+  const sortedItems = useMemo(() => {
+    return sortDevices(items, nicknames, latestSeenInData);
+  }, [items, nicknames, latestSeenInData]);
+
+  const onlineCount = useMemo(() => {
+    if (latestSeenInData === 0) return 0;
+    return items.filter((d) => {
+      const ts = getDeviceTimestamp(d);
+      return latestSeenInData - ts < ONLINE_THRESHOLD_MS;
+    }).length;
+  }, [items, latestSeenInData]);
+
   const offlineCount = useMemo(() => items.length - onlineCount, [items, onlineCount]);
 
   const throttledRefresh = () => {
@@ -57,6 +131,7 @@ export default function DevicesScreen({ navigation }: Props) {
     const unsub = api.subscribe((event) => {
       if (!event) return;
       if (event.type === "ENFORCEMENT_UPDATED") dispatch(loadDevices());
+      if (event.type === "DEVICE_SEEN") dispatch(deviceSeen(event.payload));
       if (event.type === "WS_EVENT" && event.event === "event.received") throttledRefresh();
     });
 

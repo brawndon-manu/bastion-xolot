@@ -66,6 +66,9 @@ function syncDesiredState(
         fs.writeFileSync(tmp, JSON.stringify(obj), "utf8");
         fs.renameSync(tmp, filePath);
     } catch (err) {
+        // Re-throw so callers know the edge agent was not updated.
+        // An enforcement action recorded in the DB but not synced to the edge
+        // means the device is NOT actually blocked — the caller must handle this.
         throw new Error(
             `Enforcement recorded but failed to sync to edge agent: ${err instanceof Error ? err.message : String(err)}`
         );
@@ -159,6 +162,8 @@ export function quarantineDevice(
     };
 
     if (!monitorOnly && !alreadyQuarantined) {
+        // Use a conditional UPDATE as an atomic guard — if another concurrent call
+        // already set status to 'quarantined', changes will be 0 and we skip enforcement.
         const result = db.prepare(`
             UPDATE devices
             SET status = 'quarantined'
@@ -166,6 +171,7 @@ export function quarantineDevice(
         `).run(device_id);
 
         if (result.changes === 0) {
+            // Lost the race — another call quarantined this device first
             action.status = "skipped";
         }
     }

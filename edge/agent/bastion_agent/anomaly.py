@@ -84,6 +84,7 @@ def _thresholds_for_role(role: str) -> dict:
     }
 
 
+
 # Cooldown: seconds before the same alert type can fire again for the same device
 _ALERT_COOLDOWN_SECS = 3600
 
@@ -120,13 +121,13 @@ def _z_score(value: float, mean: float, stddev: float) -> float:
     return (value - mean) / stddev
 
 
-def _severity_from_z(z: float) -> str | None:
+def _severity_from_z(z: float, thresholds: dict) -> str | None:
     """Map a z-score to an alert severity level, or None if within normal range."""
-    if z >= _Z_HIGH:
+    if z >= thresholds["z_high"]:
         return "high"
-    if z >= _Z_MEDIUM:
+    if z >= thresholds["z_med"]:
         return "medium"
-    if z >= _Z_LOW:
+    if z >= thresholds["z_low"]:
         return "low"
     return None
 
@@ -157,21 +158,21 @@ def _should_alert(severity: str, mac: str = "", alert_type: str = "") -> bool:
     return True
 
 
-def _confidence_from_z(z: float, severity: str) -> float:
+def _confidence_from_z(z: float, severity: str, thresholds: dict) -> float:
     """Map anomaly strength into a more stable confidence score."""
     if severity == "high":
-        return min(0.80 + max(z - _Z_HIGH, 0) * 0.03, 0.95)
+        return min(0.80 + max(z - thresholds["z_high"], 0) * 0.03, 0.95)
     if severity == "medium":
-        return min(0.65 + max(z - _Z_MEDIUM, 0) * 0.04, 0.85)
-    return min(0.45 + max(z - _Z_LOW, 0) * 0.03, 0.60)
+        return min(0.65 + max(z - thresholds["z_med"], 0) * 0.04, 0.85)
+    return min(0.45 + max(z - thresholds["z_low"], 0) * 0.03, 0.60)
 
 
-def _confidence_from_count(count: int, severity: str) -> float:
+def _confidence_from_count(count: int, severity: str, thresholds: dict) -> float:
     """Map unusual-destination count into a stable confidence score."""
     if severity == "high":
-        return min(0.80 + max(count - _NEW_DEST_HIGH, 0) * 0.02, 0.95)
+        return min(0.80 + max(count - thresholds["dest_high"], 0) * 0.02, 0.95)
     if severity == "medium":
-        return min(0.65 + max(count - _NEW_DEST_WARN, 0) * 0.03, 0.85)
+        return min(0.65 + max(count - thresholds["dest_warn"], 0) * 0.03, 0.85)
     return 0.50
 
 
@@ -200,14 +201,16 @@ def _route_to_detection(mac: str, severity: str, reason: str) -> None:
         )
 
 
-def _check_volume_spike(flow: dict, baseline: dict, mac: str) -> list[dict]:
+def _check_volume_spike(
+    flow: dict, baseline: dict, mac: str, thresholds: dict
+) -> list[dict]:
     """Check for outbound byte volume anomalies."""
     events = []
     current = flow["bytes_out"]
     mean = baseline["bytes_out_mean"]
     stddev = baseline["bytes_out_stddev"]
     z = _z_score(current, mean, stddev)
-    severity = _severity_from_z(z)
+    severity = _severity_from_z(z, thresholds)
 
     if severity:
         enforcement = _enforcement_for_severity(severity)
@@ -259,7 +262,7 @@ def _check_volume_spike(flow: dict, baseline: dict, mac: str) -> list[dict]:
                     f"is sending. Check for unexpected uploads, backups, or "
                     f"unfamiliar processes."
                 ),
-                confidence=_confidence_from_z(z, severity),
+                confidence=_confidence_from_z(z, severity, thresholds),
                 related_event_ids=[event["id"]],
             )
             if enforcement:
@@ -278,14 +281,16 @@ def _check_volume_spike(flow: dict, baseline: dict, mac: str) -> list[dict]:
     return events
 
 
-def _check_connection_spike(flow: dict, baseline: dict, mac: str) -> list[dict]:
+def _check_connection_spike(
+    flow: dict, baseline: dict, mac: str, thresholds: dict
+) -> list[dict]:
     """Check for connection count anomalies (possible scanning)."""
     events = []
     current = flow["connections"]
     mean = baseline["connections_mean"]
     stddev = baseline["connections_stddev"]
     z = _z_score(current, mean, stddev)
-    severity = _severity_from_z(z)
+    severity = _severity_from_z(z, thresholds)
 
     if severity:
         enforcement = _enforcement_for_severity(severity)
@@ -337,7 +342,7 @@ def _check_connection_spike(flow: dict, baseline: dict, mac: str) -> list[dict]:
                     f"If this device doesn't normally connect to many servers, "
                     f"it may be compromised."
                 ),
-                confidence=_confidence_from_z(z, severity),
+                confidence=_confidence_from_z(z, severity, thresholds),
                 related_event_ids=[event["id"]],
             )
             if enforcement:
@@ -356,7 +361,9 @@ def _check_connection_spike(flow: dict, baseline: dict, mac: str) -> list[dict]:
     return events
 
 
-def _check_unusual_destinations(flow: dict, baseline: dict, mac: str) -> list[dict]:
+def _check_unusual_destinations(
+    flow: dict, baseline: dict, mac: str, thresholds: dict
+) -> list[dict]:
     """Check for connections to destinations never seen in the baseline."""
     events = []
     current_dests = set(flow.get("destinations", []))
@@ -367,12 +374,12 @@ def _check_unusual_destinations(flow: dict, baseline: dict, mac: str) -> list[di
         return events
 
     count = len(new_dests)
-    if count < _NEW_DEST_WARN:
+    if count < thresholds["dest_warn"]:
         return events
 
-    if count >= _NEW_DEST_HIGH:
+    if count >= thresholds["dest_high"]:
         severity = "high"
-    elif count >= _NEW_DEST_WARN:
+    elif count >= thresholds["dest_warn"]:
         severity = "medium"
     else:
         severity = "low"
@@ -425,7 +432,7 @@ def _check_unusual_destinations(flow: dict, baseline: dict, mac: str) -> list[di
             f"If you don't recognize them, consider quarantining the "
             f"device until you can investigate further."
         ),
-        confidence=_confidence_from_count(count, severity),
+        confidence=_confidence_from_count(count, severity, thresholds),
         related_event_ids=[event["id"]],
     )
     if enforcement:
@@ -454,16 +461,21 @@ def check_for_anomalies(device_mac: str, current_flow: dict) -> list[dict]:
     """
     role = get_device_role(device_mac)
 
+    # Infrastructure devices (routers, mesh nodes, etc.) skip all anomaly checks.
+    # Their high connection/volume counts are expected and would produce false positives.
     if role == "infrastructure":
-        logger.debug("Skipping anomaly checks for infrastructure device %s", device_mac)
+        logger.debug("Skipping anomaly checks for infrastructure device: %s", device_mac)
         return []
 
     thresholds = _thresholds_for_role(role)
+
+
     all_events: list[dict] = []
 
     # Phase 9A:
     # Run deterministic probe detection even if the statistical baseline
     # is still learning. This rule does not depend on baseline math.
+    # Infrastructure already returned above, so this runs for all other roles.
     all_events.extend(_check_scan_probe(current_flow, device_mac))
 
     if not is_baseline_stable(device_mac):

@@ -1,15 +1,35 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { useSelector } from "react-redux";
 import type { Device } from "../api/client";
+import { ONLINE_THRESHOLD_MS, parseTimestamp } from "../api/client";
 import { selectNickname } from "../state/slices/devicesSlice";
 import type { RootState } from "../state/store";
 import StatusPill from "./StatusPill";
 import { T } from "../theme";
 
+const getDeviceTimestamp = (d: any): number => {
+  return d.lastSeenMs || parseTimestamp(d.lastSeen) || parseTimestamp(d.last_seen) || 0;
+};
+
 export default function DeviceCard({ device }: { device: Device }) {
   const nickname = useSelector((state: RootState) => selectNickname(state, device.id));
-  const isOnline = Date.now() - new Date(device.lastSeen).getTime() < 5 * 60 * 1000;
+  const items = useSelector((state: RootState) => state.devices.items);
+
+  // Calculate relative online status to handle clock skew
+  const isOnline = useMemo(() => {
+    const ts = getDeviceTimestamp(device);
+    if (!ts) return false;
+
+    const timestamps = items.map(getDeviceTimestamp).filter((t) => t > 0);
+    if (timestamps.length === 0) return false;
+
+    // Baseline 'now' is the most recent timestamp in the entire device list
+    const latestSeenInData = Math.max(...timestamps);
+
+    return latestSeenInData - ts < ONLINE_THRESHOLD_MS;
+  }, [device, items]);
+
   const stripe = device.status === "quarantined" ? T.danger : isOnline ? T.jade : T.textSecondary;
   const displayName = nickname ?? device.name;
 
