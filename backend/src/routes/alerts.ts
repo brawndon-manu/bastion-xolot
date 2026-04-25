@@ -137,12 +137,12 @@ alertsRouter.get("/:id/explain", async (req, res) => {
 
         const device = alert.device_id ? getDevice(alert.device_id) : undefined;
         const deviceContext = device ? {
-            hostname: device.hostname,
-            vendor: device.vendor,
-            ip_address: device.ip_address,
+            hostname: device.hostname ?? undefined,
+            vendor: device.vendor ?? undefined,
+            ip_address: device.ip_address ?? undefined,
             risk_score: device.risk_score,
             status: device.status,
-            first_seen: device.first_seen,
+            first_seen: String(device.first_seen),
         } : undefined;
 
         const evidenceData = alert.evidence ? JSON.parse(alert.evidence) : {};

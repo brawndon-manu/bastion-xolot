@@ -28,6 +28,10 @@ export type Device = {
 
 const VALID_ROLES = new Set<DeviceRole>(["infrastructure", "workstation", "iot", "unknown"]);
 
+// IPs are not stable device identifiers — they change with DHCP and create ghost records
+// that shadow proper MAC-based device records. Never use an IP string as a device ID.
+const _IPV4_RE = /^\d{1,3}(\.\d{1,3}){3}$/;
+
 /**
  * Input shape used when creating or updating a device.
  * 
@@ -267,10 +271,14 @@ function updateDeviceDetails(id: string, data: DeviceInput): void {
 export function ensureDeviceExists(data: DeviceInput): Device {
     const id = data.id || randomUUID();
 
-    const byId = getDevice(id);
-    if (byId) {
-        updateDeviceDetails(byId.id, data);
-        return getDevice(byId.id)!;
+    // Skip the byId shortcut when the id is an IP address — falling through to the
+    // MAC/IP/hostname lookups finds the authoritative MAC-based record instead.
+    if (!_IPV4_RE.test(id)) {
+        const byId = getDevice(id);
+        if (byId) {
+            updateDeviceDetails(byId.id, data);
+            return getDevice(byId.id)!;
+        }
     }
 
     if (data.mac_address) {
@@ -302,7 +310,9 @@ export function ensureDeviceExists(data: DeviceInput): Device {
         }
     }
 
-    return createDevice({ ...data, id });
+    // Don't persist an IP string as the device ID — create with a UUID so we
+    // don't accumulate ghost IP-keyed records alongside MAC-based records.
+    return createDevice({ ...data, id: _IPV4_RE.test(id) ? randomUUID() : id });
 }
 
 /**

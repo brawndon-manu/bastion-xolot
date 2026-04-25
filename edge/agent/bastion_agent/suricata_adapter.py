@@ -34,6 +34,15 @@ _NOISY_SIGNATURE_PREFIXES = (
     "suricata stream ",
     "et info observed ",
     "et info session traversal utilities for nat ",
+    "et user_agents ",
+    "et policy ",
+    "et info ",
+)
+
+_NOISY_CATEGORIES = (
+    "generic protocol command decode",
+    "not suspicious",
+    "misc activity",
 )
 
 
@@ -41,10 +50,10 @@ def _is_low_value_signature(signature: str, category: str) -> bool:
     normalized_signature = signature.lower().strip()
     normalized_category = category.lower().strip()
 
-    if normalized_signature.startswith(_NOISY_SIGNATURE_PREFIXES):
+    if any(normalized_signature.startswith(p) for p in _NOISY_SIGNATURE_PREFIXES):
         return True
 
-    return "generic protocol command decode" in normalized_category
+    return any(c in normalized_category for c in _NOISY_CATEGORIES)
 
 
 def _is_recent_duplicate(event: dict) -> bool:

@@ -286,7 +286,7 @@ function detectAnomaly(
     let score = 0;
     const findings: string[] = [];
 
-    if (summary.flow_count > Math.max(10, previousBaseline.avg_flow_count * 3)) {
+    if (summary.flow_count > Math.max(25, previousBaseline.avg_flow_count * 4)) {
         score += 20;
         findings.push("flow volume exceeded the established baseline");
     }
@@ -296,7 +296,7 @@ function detectAnomaly(
         findings.push("traffic bytes spiked above the normal range");
     }
 
-    if (summary.unique_destinations > Math.max(8, previousBaseline.avg_unique_destinations * 2.5)) {
+    if (summary.unique_destinations > Math.max(15, previousBaseline.avg_unique_destinations * 4)) {
         score += 15;
         findings.push("the device contacted an unusual number of destinations");
     }

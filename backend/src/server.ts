@@ -32,6 +32,36 @@ initDatabase();
 
 /**
  * ==============================
+ * DATA RETENTION
+ * ==============================
+ *
+ * Raw events and metadata summaries grow unboundedly. Prune anything
+ * older than 7 days on startup and every 6 hours thereafter.
+ * Alerts, devices, baselines, and anomalies are never pruned.
+ */
+function pruneOldData(): void {
+    const db = getDb();
+    const cutoff = Date.now() - 14 * 24 * 60 * 60 * 1000;
+
+    const { changes: eventsDeleted } = db.prepare(
+        `DELETE FROM events WHERE timestamp < ?`
+    ).run(cutoff);
+
+    const { changes: summariesDeleted } = db.prepare(
+        `DELETE FROM metadata_summaries WHERE created_at < ?`
+    ).run(cutoff);
+
+    if (eventsDeleted > 0 || summariesDeleted > 0) {
+        console.log(`[retention] pruned ${eventsDeleted} events, ${summariesDeleted} summaries older than 7 days`);
+        db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+    }
+}
+
+pruneOldData();
+setInterval(pruneOldData, 6 * 60 * 60 * 1000);
+
+/**
+ * ==============================
  * EXPRESS APPLICATION SETUP
  * ==============================
  */

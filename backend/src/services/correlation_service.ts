@@ -82,10 +82,13 @@ function isInformationalIdsSignal(event: Record<string, unknown>): boolean {
 
     return (
         signature.startsWith("et info ") ||
+        signature.startsWith("et user_agents ") ||
+        signature.startsWith("et policy ") ||
         signature.includes("observed ") ||
         signature.includes("suricata stream") ||
         category.includes("not suspicious") ||
-        category.includes("generic protocol command decode")
+        category.includes("generic protocol command decode") ||
+        category.includes("misc activity")
     );
 }
 
@@ -136,12 +139,12 @@ function toDeviceContext(
 ): DeviceContext | undefined {
     if (!device) return undefined;
     return {
-        hostname: device.hostname,
-        vendor: device.vendor,
-        ip_address: device.ip_address,
+        hostname: device.hostname ?? undefined,
+        vendor: device.vendor ?? undefined,
+        ip_address: device.ip_address ?? undefined,
         risk_score: device.risk_score,
         status: device.status,
-        first_seen: device.first_seen,
+        first_seen: String(device.first_seen),
         recent_anomaly_count: recentAnomalyCount,
         recent_ids_signal_count: recentIdsSignalCount,
     };
