@@ -37,7 +37,11 @@ DRY_RUN = os.getenv("BASTION_DRY_RUN", "true").lower() not in ("false", "0", "no
 
 # Master enforcement gate — must be explicitly enabled via env var.
 # Set BASTION_ALLOW_ENFORCEMENT=true in .env to allow nft rules to fire.
-ALLOW_ENFORCEMENT = os.getenv("BASTION_ALLOW_ENFORCEMENT", "false").lower() in ("true", "1", "yes")
+ALLOW_ENFORCEMENT = os.getenv("BASTION_ALLOW_ENFORCEMENT", "false").lower() in (
+    "true",
+    "1",
+    "yes",
+)
 
 
 # ═══════════════════════════════════════════
@@ -116,13 +120,14 @@ BASELINE_LEARNING_HOURS = int(os.getenv("BASTION_BASELINE_HOURS", "24"))
 # ═══════════════════════════════════════════
 
 # Path for the agent's local SQLite database
-LOCAL_DB_PATH = os.getenv(
-    "BASTION_LOCAL_DB", "/var/lib/bastion-agent/agent.db"
-)
+LOCAL_DB_PATH = os.getenv("BASTION_LOCAL_DB", "/var/lib/bastion-agent/agent.db")
 
 # Path for agent logs
 LOG_PATH = os.getenv("BASTION_LOG_PATH", "/var/log/bastion-agent.log")
 LOG_LEVEL = os.getenv("BASTION_LOG_LEVEL", "INFO")
+
+EVENT_QUEUE_MAX_SIZE = int(os.getenv("BASTION_QUEUE_MAX_SIZE", "10000"))
+EVENT_QUEUE_TTL_SECONDS = int(os.getenv("BASTION_QUEUE_TTL", "7200"))
 
 
 # ═══════════════════════════════════════════
@@ -152,6 +157,7 @@ def get_monitor_only() -> bool:
             url = f"{BACKEND_URL}/health"
             with urllib.request.urlopen(url, timeout=3) as resp:
                 import json as _json
+
                 data = _json.loads(resp.read())
             _monitor_only_cache = bool(data.get("monitor_only", True))
             _monitor_only_last_fetch = _time.monotonic()
@@ -182,6 +188,38 @@ def enforcement_allowed() -> bool:
     return True
 
 
+_device_roles_lock = threading.Lock()
+_device_roles_cache: dict[str, str] = {}
+_device_roles_last_fetch: float = 0.0
+_DEVICE_ROLES_TTL = 60.0
+
+
+def get_device_role(mac: str) -> str:
+    global _device_roles_cache, _device_roles_last_fetch
+
+    if mac.lower() in {m.lower() for m in PROTECTED_MACS}:
+        return "infrastructure"
+
+    with _device_roles_lock:
+        if _time.monotonic() - _device_roles_last_fetch >= _DEVICE_ROLES_TTL:
+            try:
+                url = f"{BACKEND_URL}/devices"
+                with urllib.request.urlopen(url, timeout=5) as resp:
+                    import json as _json
+
+                    devices = _json.loads(resp.read())
+                _device_roles_cache = {
+                    d["mac_address"].lower(): d.get("role", "unknown")
+                    for d in devices
+                    if d.get("mac_address")
+                }
+                _device_roles_last_fetch = _time.monotonic()
+            except Exception:
+                pass
+
+    return _device_roles_cache.get(mac.lower(), "unknown")
+
+
 def operator_enforcement_allowed() -> bool:
     """
     Looser gate for operator-initiated actions — bypasses monitor_only
@@ -198,4 +236,3 @@ def operator_enforcement_allowed() -> bool:
     if not LAN_IFACE.strip() or not WAN_IFACE.strip():
         return False
     return True
-

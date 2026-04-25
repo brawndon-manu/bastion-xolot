@@ -36,7 +36,12 @@ from bastion_agent.config import (
     MONITOR_ONLY,
     DRY_RUN,
 )
-from bastion_agent.storage import init_local_db, get_pending_events, mark_events_dispatched
+from bastion_agent.storage import (
+    init_local_db,
+    get_pending_events,
+    mark_events_dispatched,
+    purge_stale_queue_events,
+)
 from bastion_agent.discovery import scan_network
 from bastion_agent import mdns as mdns_listener
 from bastion_agent.dns_monitor import DnsMonitor
@@ -44,6 +49,8 @@ from bastion_agent.flow_summary import collect_flow_summaries
 from bastion_agent.baseline import update_baseline
 from bastion_agent.anomaly import check_for_anomalies, init_cooldowns
 from bastion_agent.gateway_probe_monitor import route_gateway_probe_signals
+from bastion_agent.suricata_adapter import parse_eve_log
+from bastion_agent.storage import enqueue_event
 from bastion_agent.events import dispatch_to_backend
 
 logger = logging.getLogger("bastion_agent")
@@ -91,6 +98,7 @@ def _print_banner() -> None:
 # ─────────────────────────────────────────────
 # Async task loops
 # ─────────────────────────────────────────────
+
 
 async def discovery_loop() -> None:
     """Periodically scan the neighbor table for devices."""
@@ -181,6 +189,27 @@ async def flow_anomaly_loop() -> None:
             pass
 
 
+async def suricata_monitor_loop() -> None:
+    """Periodically ingest new Suricata IDS alerts from eve.json."""
+    logger.info("Suricata monitor loop started (every %ds)", FLOW_SUMMARY_INTERVAL)
+
+    while not _shutdown.is_set():
+        try:
+            alerts = parse_eve_log()
+            for alert in alerts:
+                enqueue_event(alert["id"], alert)
+            if alerts:
+                logger.info("Suricata: ingested %d new IDS alerts", len(alerts))
+        except Exception:
+            logger.exception("Error in Suricata monitor loop")
+
+        try:
+            await asyncio.wait_for(_shutdown.wait(), timeout=FLOW_SUMMARY_INTERVAL)
+            break
+        except asyncio.TimeoutError:
+            pass
+
+
 async def dispatch_loop() -> None:
     """
     Periodically dispatch queued events to the backend API.
@@ -192,6 +221,7 @@ async def dispatch_loop() -> None:
 
     while not _shutdown.is_set():
         try:
+            purge_stale_queue_events()
             pending = get_pending_events(limit=50)
             if pending:
                 dispatched = await dispatch_to_backend(pending)
@@ -199,7 +229,8 @@ async def dispatch_loop() -> None:
                     mark_events_dispatched(dispatched)
                     logger.info(
                         "Dispatched %d/%d events to backend",
-                        len(dispatched), len(pending),
+                        len(dispatched),
+                        len(pending),
                     )
         except Exception:
             logger.exception("Error in dispatch loop")
@@ -215,6 +246,7 @@ async def dispatch_loop() -> None:
 # Entry point
 # ─────────────────────────────────────────────
 
+
 async def _run() -> None:
     """Start all detection loops and wait for shutdown."""
 
@@ -227,6 +259,7 @@ async def _run() -> None:
         asyncio.create_task(discovery_loop(), name="discovery"),
         asyncio.create_task(dns_monitor_loop(), name="dns_monitor"),
         asyncio.create_task(flow_anomaly_loop(), name="flow_anomaly"),
+        asyncio.create_task(suricata_monitor_loop(), name="suricata"),
         asyncio.create_task(dispatch_loop(), name="dispatch"),
     ]
 

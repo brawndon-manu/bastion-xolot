@@ -66,7 +66,9 @@ function syncDesiredState(
         fs.writeFileSync(tmp, JSON.stringify(obj), "utf8");
         fs.renameSync(tmp, filePath);
     } catch (err) {
-        console.error("Failed to sync desired_state.json:", err);
+        throw new Error(
+            `Enforcement recorded but failed to sync to edge agent: ${err instanceof Error ? err.message : String(err)}`
+        );
     }
 }
 
@@ -137,11 +139,11 @@ export function quarantineDevice(
     if (status === "simulated" && initiatedBy === "system") {
         const cutoff = Date.now() - 60 * 60 * 1000;
         const recent = db.prepare(`
-            SELECT id FROM enforcement_actions
+            SELECT * FROM enforcement_actions
             WHERE device_id = ? AND action = 'quarantine' AND status = 'simulated' AND created_at >= ?
             LIMIT 1
         `).get(device_id, cutoff);
-        if (recent) return null as unknown as EnforcementAction;
+        if (recent) return recent as EnforcementAction;
     }
 
     const action: EnforcementAction = {
@@ -157,11 +159,15 @@ export function quarantineDevice(
     };
 
     if (!monitorOnly && !alreadyQuarantined) {
-        db.prepare(`
+        const result = db.prepare(`
             UPDATE devices
             SET status = 'quarantined'
-            WHERE id = ?
+            WHERE id = ? AND status != 'quarantined'
         `).run(device_id);
+
+        if (result.changes === 0) {
+            action.status = "skipped";
+        }
     }
 
     recordAction(action);
