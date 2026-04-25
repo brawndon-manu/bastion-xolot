@@ -88,6 +88,14 @@ const ANOMALY_RESOLUTION_WINDOW_MS = parseInt(
 const DESIRED_STATE_PATH = process.env.DESIRED_STATE_PATH ||
     "/var/lib/bastion/enforcement/desired_state.json";
 
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
+
+// 0 = disabled entirely; any positive number = max AI calls per calendar day
+const AI_DAILY_CALL_LIMIT = parseInt(
+    process.env.AI_DAILY_CALL_LIMIT || "50",
+    10
+);
+
 export const config = Object.freeze({
     NODE_ENV,
     DB_PATH,
@@ -98,4 +106,6 @@ export const config = Object.freeze({
     ALERT_DEDUP_WINDOW_MS,
     ANOMALY_RESOLUTION_WINDOW_MS,
     DESIRED_STATE_PATH,
+    ANTHROPIC_API_KEY,
+    AI_DAILY_CALL_LIMIT,
 });
