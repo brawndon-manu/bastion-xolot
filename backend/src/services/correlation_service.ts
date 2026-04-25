@@ -9,7 +9,7 @@ import {
 import { getDevice, updateDeviceRisk } from "./device_service";
 import { quarantineDevice } from "./enforcement_service";
 import { broadcast } from "../realtime/websocket";
-import { DeviceContext, explainSecurityEvent } from "./plain_english";
+import { DeviceContext, explainSecurityEvent, generateRecommendedAction } from "./plain_english";
 import { Device } from "./device_service";
 import {
     getRecentAnomalies,
@@ -173,6 +173,7 @@ async function createOrRefreshAlert(data: {
     severity: string;
     title: string;
     explanationFactory: () => Promise<string>;
+    recommendedActionFactory: () => Promise<string>;
     evidence: string;
     confidence: number;
     fingerprintParts: Array<string | number | null | undefined>;
@@ -202,7 +203,10 @@ async function createOrRefreshAlert(data: {
         }
     }
 
-    const explanation = await data.explanationFactory();
+    const [explanation, recommended_action] = await Promise.all([
+        data.explanationFactory(),
+        data.recommendedActionFactory(),
+    ]);
 
     return {
         alert: createAlert({
@@ -211,6 +215,7 @@ async function createOrRefreshAlert(data: {
             severity: data.severity,
             title: data.title,
             explanation,
+            recommended_action,
             evidence: data.evidence,
             confidence: data.confidence,
             fingerprint,
@@ -242,6 +247,7 @@ async function createBehavioralAlert(
         severity,
         title: "Behavioral anomaly detected",
         explanationFactory: async () => `${await explainSecurityEvent("anomaly", anomaly, "standard", toDeviceContext(device))} ${anomaly.summary}.`,
+        recommendedActionFactory: () => generateRecommendedAction(anomaly.type, anomaly, toDeviceContext(device)),
         evidence: anomaly.evidence,
         confidence,
         fingerprintParts: [anomaly.type],
@@ -359,6 +365,11 @@ async function createCorrelatedThreatAlert(
             "standard",
             toDeviceContext(device, anomalies.length, recentIdsSignals.length)
         ),
+        recommendedActionFactory: () => generateRecommendedAction(
+            "correlated_threat",
+            { event, anomaly_count: anomalies.length, ids_signal_count: recentIdsSignals.length },
+            toDeviceContext(device, anomalies.length, recentIdsSignals.length)
+        ),
         evidence: JSON.stringify({
             event,
             anomalies,
@@ -447,6 +458,7 @@ export async function processEvent(event: Record<string, unknown>, deviceId: str
             severity: "medium",
             title: `Blocked domain: ${event.domain || "unknown"}`,
             explanationFactory: () => explainSecurityEvent("dns_block", event, "standard", toDeviceContext(sourceDevice)).then(e => `Device attempted to access a blocked domain (${event.domain || "unknown"}). ${e}`),
+            recommendedActionFactory: () => generateRecommendedAction("dns_block", event, toDeviceContext(sourceDevice)),
             evidence: JSON.stringify(event),
             confidence: 0.8,
             fingerprintParts: [event.type, String(event.domain || "unknown")],
@@ -469,6 +481,7 @@ export async function processEvent(event: Record<string, unknown>, deviceId: str
             severity: connectionSeverity,
             title: "Suspicious outbound connection detected",
             explanationFactory: async () => "A device initiated an outbound connection that matched a suspicious destination pattern.",
+            recommendedActionFactory: () => generateRecommendedAction("suspicious_connection", event, toDeviceContext(sourceDevice)),
             evidence: JSON.stringify(event),
             confidence: connectionProfile.confidence,
             fingerprintParts: [
@@ -494,6 +507,7 @@ export async function processEvent(event: Record<string, unknown>, deviceId: str
             severity: idsSeverity,
             title: `IDS Alert: ${event.signature || "Unknown threat"}`,
             explanationFactory: () => explainSecurityEvent("ids_alert", event, "standard", toDeviceContext(sourceDevice)),
+            recommendedActionFactory: () => generateRecommendedAction("ids_alert", event, toDeviceContext(sourceDevice)),
             evidence: JSON.stringify(event),
             confidence: idsProfile.confidence,
             fingerprintParts: [

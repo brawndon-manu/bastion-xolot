@@ -106,6 +106,7 @@ type BackendAlert = {
   severity: string;
   title: string;
   explanation: string | null;
+  recommended_action: string | null;
   evidence: string | null;
   confidence: number | null;
   status: string;
@@ -476,9 +477,11 @@ function mapAlert(alert: BackendAlert): Alert
 
   const createdMs = parseTimestamp(alert.created_at);
 
-  // For edge alerts, extract the recommended_action the detection module wrote
+  // Prefer top-level field (AI-enriched); fall back to edge_alert evidence for older records
   let recommendedAction: string | undefined;
-  if (alert.type === "edge_alert" && alert.evidence) {
+  if (alert.recommended_action) {
+    recommendedAction = alert.recommended_action;
+  } else if (alert.type === "edge_alert" && alert.evidence) {
     try {
       const evidenceData = JSON.parse(alert.evidence);
       if (typeof evidenceData.recommended_action === "string" && evidenceData.recommended_action.trim()) {

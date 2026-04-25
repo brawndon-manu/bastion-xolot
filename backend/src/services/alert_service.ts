@@ -16,6 +16,7 @@ export type AlertRecord = {
     severity: string;               // Severity level (low, medium, high)
     title: string;                  // Short summary of the alert
     explanation: string | null;     // Human-readable explanation
+    recommended_action: string | null; // AI-generated next step for the user
     evidence: string | null;        // Raw evidence (JSON string)
     fingerprint: string | null;     // Stable deduplication key for repeated signals
     confidence: number | null;      // Confidence score (0-1)
@@ -58,6 +59,7 @@ export function createAlert(data: {
     severity: string;
     title: string;
     explanation?: string;
+    recommended_action?: string;
     evidence?: string;
     fingerprint?: string;
     confidence?: number;
@@ -65,43 +67,30 @@ export function createAlert(data: {
     const db = getDb();
     const now = Date.now();
 
-    /**
-     * Normalize and construct alert object
-     * 
-     * Ensures:
-     *  - Optional fields default to null 
-     *  - Consistent structure across all alerts
-     */
     const alert: AlertRecord = {
-        id: randomUUID(),                       // Generate unique alert ID
+        id: randomUUID(),
         device_id: data.device_id || null,
         type: data.type,
         severity: data.severity,
         title: data.title,
         explanation: data.explanation || null,
+        recommended_action: data.recommended_action || null,
         evidence: data.evidence || null,
         fingerprint: data.fingerprint || null,
         confidence: data.confidence ?? null,
-        status: "active",                       // Default state
-        created_at: now,                        // Timestamp at creation
+        status: "active",
+        created_at: now,
         updated_at: now,
         resolved_at: null,
     };
 
-    /**
-     * Persist alert to database
-     * 
-     * Uses prepared statement for:
-     *  - Performance
-     *  - SQL injection safety
-     */
     db.prepare(`
         INSERT INTO alerts (
             id, device_id, type, severity, title,
-            explanation, evidence, fingerprint, confidence,
+            explanation, recommended_action, evidence, fingerprint, confidence,
             status, created_at, updated_at, resolved_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
         alert.id,
         alert.device_id,
@@ -109,6 +98,7 @@ export function createAlert(data: {
         alert.severity,
         alert.title,
         alert.explanation,
+        alert.recommended_action,
         alert.evidence,
         alert.fingerprint,
         alert.confidence,
@@ -161,6 +151,7 @@ export function refreshAlert(id: string, patch: {
     title?: string;
     severity?: string;
     explanation?: string;
+    recommended_action?: string;
     evidence?: string;
     confidence?: number;
     status?: string;
@@ -182,6 +173,7 @@ export function refreshAlert(id: string, patch: {
         title: patch.title ?? existing.title,
         severity: patch.severity ?? existing.severity,
         explanation: patch.explanation ?? existing.explanation,
+        recommended_action: patch.recommended_action ?? existing.recommended_action,
         evidence: patch.evidence ?? existing.evidence,
         confidence: patch.confidence ?? existing.confidence,
         status,

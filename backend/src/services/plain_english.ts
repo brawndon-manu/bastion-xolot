@@ -48,6 +48,23 @@ function withinDailyBudget(): boolean {
 
 // ── Static fallbacks (used when AI is unavailable) ──
 
+function staticRecommendedAction(type: string): string {
+    switch (type) {
+        case "dns_block":
+            return "Identify which app on this device made the request. If you don't recognize it, remove the app or block the device temporarily.";
+        case "traffic_spike":
+            return "Check the device for unexpected uploads or running processes. If you can't explain the traffic, disconnect it and investigate.";
+        case "ids_alert":
+            return "Isolate this device from the network and review its recent connections. If the activity looks unfamiliar, scan for malware.";
+        case "correlated_threat":
+            return "Quarantine this device immediately — multiple warning signs point to it. Investigate before reconnecting it to the network.";
+        case "suspicious_connection":
+            return "Block outbound traffic from this device and verify whether this connection was expected. If not, scan for malware.";
+        default:
+            return "Review the device's recent activity and check for unfamiliar software or connections.";
+    }
+}
+
 function staticExplanation(type: string, data: any, level: TranslationLevel): string {
     switch (type) {
         case "dns_block":
@@ -160,6 +177,63 @@ async function callAI(
         logger.warn("AI explanation generation failed", { error: String(err) });
         return null;
     }
+}
+
+function buildRecommendedActionPrompt(
+    type: string,
+    data: any,
+    deviceContext?: DeviceContext
+): string {
+    const deviceInfo = deviceContext
+        ? `Device: ${deviceContext.hostname || "unknown"} (${deviceContext.vendor || "unknown vendor"}, ${deviceContext.ip_address || "unknown IP"}), risk score: ${deviceContext.risk_score ?? "?"}.`
+        : "";
+
+    return (
+        `You are a network security assistant for Bastión Xólot, a home and small-business security gateway. ` +
+        `Write 1-2 sentences telling the device owner exactly what to do next about this alert. ` +
+        `Be specific and practical. Reference concrete details from the evidence where useful. ` +
+        `No bullet points. No markdown. No explanation of what happened — only what to do.\n\n` +
+        `Alert type: ${type}\n` +
+        `Evidence: ${JSON.stringify(data)}\n` +
+        (deviceInfo ? `${deviceInfo}\n` : "")
+    );
+}
+
+/**
+ * Returns an AI-generated recommended action for a security alert.
+ *
+ * Falls back to a static string if the API key is missing, the daily
+ * budget is exhausted, or the call fails.
+ */
+export async function generateRecommendedAction(
+    type: string,
+    data: any,
+    deviceContext?: DeviceContext
+): Promise<string> {
+    const client = getClient();
+    if (client && withinDailyBudget()) {
+        try {
+            const message = await client.messages.create({
+                model: "claude-haiku-4-5-20251001",
+                max_tokens: 120,
+                messages: [
+                    {
+                        role: "user",
+                        content: buildRecommendedActionPrompt(type, data, deviceContext),
+                    },
+                ],
+            });
+
+            const block = message.content[0];
+            if (block.type === "text") {
+                const text = block.text.replace(/^#+\s.*\n?/gm, "").trim();
+                if (text) return text;
+            }
+        } catch (err) {
+            logger.warn("AI recommended action generation failed", { error: String(err) });
+        }
+    }
+    return staticRecommendedAction(type);
 }
 
 /**

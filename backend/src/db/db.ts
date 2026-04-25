@@ -143,6 +143,7 @@ function applyMigrations() {
         "ALTER TABLE anomalies ADD COLUMN resolved_at INTEGER",
         "ALTER TABLE devices ADD COLUMN vendor TEXT",
         "ALTER TABLE devices ADD COLUMN role TEXT DEFAULT 'unknown'",
+        "ALTER TABLE alerts ADD COLUMN recommended_action TEXT",
     ];
 
     for (const migration of migrations) {
