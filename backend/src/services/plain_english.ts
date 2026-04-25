@@ -1,98 +1,103 @@
-/**
- * Translation layer between raw security events and user-facing explanations.
- *
- * Supports three verbosity levels driven by the user's chosen Translation View:
- *   "nerd"     — technical detail, protocol names, attack vectors
- *   "standard" — plain English, assumes basic network awareness
- *   "grandma"  — zero jargon, everyday analogies
- *
- * Used by:
- *  - correlation_service when creating alerts (defaults to "standard")
- *  - alerts route when the mobile app requests a specific level
- */
-
 import Anthropic from "@anthropic-ai/sdk";
+import { config } from "../config";
+import { logger } from "../utils/logger";
 
-export type TranslationLevel = "nerd" | "standard" | "grandma";
+let _client: Anthropic | null = null;
 
-export type DeviceContext = {
-    hostname: string | null;
-    vendor: string | null;
-    ip_address: string | null;
-    risk_score: number;
-    status: string;
-    first_seen: number;
-    recent_anomaly_count?: number;
-    recent_ids_signal_count?: number;
-};
-
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
-const systemPrompts: Record<TranslationLevel, string> = {
-    nerd: `You are a senior cybersecurity analyst reviewing a security event from a home network gateway. You will be given context about the specific device involved — use it to make your analysis concrete and personal to that device. Explain what happened with full technical detail — include protocol names, attack vectors, threat classifications, and relevant IOC context. Be precise and concise. One short paragraph.`,
-
-    standard: `You are a helpful security assistant reviewing a security event from a home network gateway. You will be given context about the specific device involved — use it to make your explanation specific to that device rather than generic. Explain what happened for an everyday person who is not technical but is comfortable using technology. Use plain language, no jargon. Clearly say what the device did, whether it's a concern, and if they need to do anything. Be calm and direct. One short paragraph.`,
-
-    grandma: `You are explaining a home network security event to someone with absolutely no technical background. You will be given context about the specific device involved — mention the device by name if you have it. Use simple everyday analogies. Be warm and reassuring while clearly stating whether they need to do anything. Keep it to 2-3 sentences max.`,
-};
-
-function buildUserMessage(type: string, data: any, ctx?: DeviceContext): string {
-    const lines: string[] = [];
-
-    if (ctx) {
-        const identity = ctx.hostname || ctx.ip_address || "unknown device";
-        const vendor = ctx.vendor || "unknown vendor";
-        const onNetworkSince = new Date(ctx.first_seen).toISOString().split("T")[0];
-
-        lines.push("Device context:");
-        lines.push(`- Identity: ${identity} (${vendor})`);
-        lines.push(`- IP: ${ctx.ip_address || "unknown"}`);
-        lines.push(`- Risk score: ${ctx.risk_score}/100`);
-        lines.push(`- Status: ${ctx.status}`);
-        lines.push(`- On network since: ${onNetworkSince}`);
-        if (ctx.recent_anomaly_count !== undefined) {
-            lines.push(`- Recent behavioral anomalies (last 1h): ${ctx.recent_anomaly_count}`);
-        }
-        if (ctx.recent_ids_signal_count !== undefined) {
-            lines.push(`- Recent IDS/suspicious signals (last 1h): ${ctx.recent_ids_signal_count}`);
-        }
-        lines.push("");
+function getClient(): Anthropic | null {
+    if (!config.ANTHROPIC_API_KEY) return null;
+    if (!_client) {
+        _client = new Anthropic({ apiKey: config.ANTHROPIC_API_KEY });
     }
+    return _client;
+}
 
-    lines.push("Security event:");
-    lines.push(`- Type: ${type}`);
-    lines.push(`- Details: ${JSON.stringify(data, null, 2)}`);
+// ── Daily call budget ──
+let _budgetDay = "";
+let _budgetCount = 0;
 
-    return lines.join("\n");
+function withinDailyBudget(): boolean {
+    if (config.AI_DAILY_CALL_LIMIT === 0) return false;
+    const today = new Date().toISOString().slice(0, 10);
+    if (today !== _budgetDay) {
+        _budgetDay = today;
+        _budgetCount = 0;
+    }
+    if (_budgetCount >= config.AI_DAILY_CALL_LIMIT) {
+        logger.warn(
+            `AI daily call limit (${config.AI_DAILY_CALL_LIMIT}) reached — falling back to static explanation`,
+        );
+        return false;
+    }
+    _budgetCount++;
+    return true;
 }
 
 /**
- * Returns a human-readable AI-generated explanation for a security event at the given level.
- * Falls back to a generic message if the API call fails.
+ * Converts technical security data into human-readable explanation.
+ * Used as a synchronous fallback when AI is unavailable.
  */
-export async function explainSecurityEvent(
-    type: string,
-    data: any,
-    level: TranslationLevel = "standard",
-    deviceContext?: DeviceContext
-): Promise<string> {
+export function explainSecurityEvent(type: string, data: any): string {
+    switch (type) {
+        case "dns_block":
+            return "A device on your network attempted to access a blocked or suspicious domain.";
+        case "traffic_spike":
+            return "A device generated unusually high network activity compared to its normal behavior.";
+        case "anomaly":
+            return "The system detected unusual network behavior from a device.";
+        case "ids_alert":
+            return `The gateway IDS flagged this traffic as suspicious${data?.signature ? ` (${data.signature})` : ""}.`;
+        case "correlated_threat":
+            return "Multiple signals agree that this device is behaving suspiciously, increasing confidence that the activity is real.";
+        case "enforcement.monitor_only":
+            return "The device crossed the enforcement threshold, but the gateway is in monitor-only mode so no block was applied.";
+        default:
+            return "Suspicious network activity was detected.";
+    }
+}
+
+/**
+ * Calls the Claude API to generate a plain-English alert explanation.
+ *
+ * Returns null if ANTHROPIC_API_KEY is not configured or the call fails.
+ * The caller should fall back to explainSecurityEvent() in that case.
+ */
+export async function generateAIExplanation(
+    alertType: string,
+    severity: string,
+    title: string,
+    evidence: Record<string, unknown>
+): Promise<string | null> {
+    const client = getClient();
+    if (!client) return null;
+    if (!withinDailyBudget()) return null;
+
     try {
         const message = await client.messages.create({
             model: "claude-haiku-4-5-20251001",
-            max_tokens: 300,
-            system: systemPrompts[level],
+            max_tokens: 120,
             messages: [
                 {
                     role: "user",
-                    content: buildUserMessage(type, data, deviceContext),
+                    content:
+                        `You are a home network security assistant. Write 1-2 sentences explaining this alert to a non-technical homeowner. Be specific about what happened and why it matters. No jargon, no bullet points.\n\n` +
+                        `Alert type: ${alertType}\n` +
+                        `Severity: ${severity}\n` +
+                        `Title: ${title}\n` +
+                        `Evidence: ${JSON.stringify(evidence)}`,
                 },
             ],
         });
 
         const block = message.content[0];
-        return block.type === "text" ? block.text.trim() : "A security event was detected on your network.";
+        if (block.type === "text") {
+            return block.text
+                .replace(/^#+\s.*\n?/gm, "")
+                .trim();
+        }
+        return null;
     } catch (err) {
-        console.error("Failed to generate AI explanation:", err);
-        return "A security event was detected on your network.";
+        logger.warn("AI explanation generation failed", { error: String(err) });
+        return null;
     }
 }
