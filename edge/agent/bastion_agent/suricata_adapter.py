@@ -71,6 +71,9 @@ def _is_recent_duplicate(event: dict) -> bool:
     return False
 
 
+# Tracks how far into eve.json already read.
+# This is process-local; on a fresh agent start we intentionally begin at EOF
+# so historical Suricata noise does not flood the backend queue
 _eve_log_offset: int = 0
 _eve_log_initialized: bool = False
 
@@ -127,14 +130,18 @@ def parse_eve_log(log_path: str = "/var/log/suricata/eve.json") -> list[dict]:
                     device_id = data["src_mac"]
                     device_id_type = "mac"
                 elif src_ip and _is_private(src_ip):
+                    # Outbound alert — local device is the source
                     device_id = src_ip
                     device_id_type = "ip"
                 elif dest_ip and _is_private(dest_ip):
+                    # Inbound alert — local device is the destination
                     device_id = dest_ip
                     device_id_type = "ip"
                 else:
                     continue
 
+                # Both endpoints are private — local network traffic, not an external attack.
+                # SSDP→router, mDNS, and similar patterns produce amplification false positives here.
                 if src_ip and dest_ip and _is_private(src_ip) and _is_private(dest_ip):
                     continue
 

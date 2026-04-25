@@ -213,11 +213,13 @@ def get_pending_events(limit: int = 50) -> list[dict]:
     """
     Retrieve events that have not yet been dispatched and are within the TTL window.
 
-    Events older than EVENT_QUEUE_TTL_SECONDS are stale — mark them dispatched
-    so they stop clogging the queue and are never sent to the backend.
+    Events older than EVENT_QUEUE_TTL_SECONDS are stale — skip them so they
+    are never sent to the backend, and mark them dispatched to prevent them
+    from appearing on future calls.
     """
     conn = get_conn()
 
+    # Mark stale events as dispatched so they stop clogging the queue
     conn.execute(
         "UPDATE event_queue SET dispatched = 1"
         " WHERE dispatched = 0"
@@ -251,6 +253,7 @@ def purge_stale_queue_events() -> int:
     if deleted:
         logger.info("Purged %d stale events from queue", deleted)
     return deleted
+
 
 def mark_events_dispatched(event_ids: list[str]) -> None:
     """Mark a batch of events as successfully dispatched."""

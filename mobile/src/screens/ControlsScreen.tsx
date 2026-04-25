@@ -76,7 +76,7 @@ export default function ControlsScreen() {
       }
     });
 
-    return () => { unsub(); api.disconnectRealtime(); };
+    return () => { unsub(); };
   }, [dispatch]);
 
   let backendModeText = "Unable to read backend health right now.";
@@ -104,7 +104,12 @@ export default function ControlsScreen() {
             trackColor={{ false: T.borderSubtle, true: T.borderJade }}
             onValueChange={async (value) => {
               dispatch(setMonitorOnly(value));
-              try { await api.setMonitorOnly(value); } catch { /* ignore */ }
+              try {
+                await api.setMonitorOnly(value);
+              } catch {
+                dispatch(setMonitorOnly(!value)); // revert toggle if backend call fails
+                Alert.alert("Error", "Failed to update enforcement mode.");
+              }
               await loadHealth();
             }}
           />
@@ -141,7 +146,14 @@ export default function ControlsScreen() {
       {/* ── Enforcement history ── */}
       <Text style={styles.sectionLabel}>ENFORCEMENT HISTORY</Text>
       <View style={styles.card}>
-        {error && <Text style={styles.error}>{error}</Text>}
+        {error && (
+          <View style={styles.errorRow}>
+            <Text style={styles.error}>{error}</Text>
+            <Pressable onPress={loadHistory} style={styles.retryBtn}>
+              <Text style={styles.retryText}>Retry</Text>
+            </Pressable>
+          </View>
+        )}
 
         {history.length === 0 && !error && (
           <Text style={styles.empty}>No enforcement actions yet.</Text>
@@ -221,7 +233,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     letterSpacing: 0.3,
   },
-  error: { color: T.dangerText, fontSize: 13, marginBottom: 8 },
+  error: { color: T.dangerText, fontSize: 13, flex: 1 },
+  errorRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 8 },
+  retryBtn: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: T.borderSubtle },
+  retryText: { color: T.textSecondary, fontSize: 12, fontWeight: "700" },
 
   // Quarantined device row
   deviceRow: {
