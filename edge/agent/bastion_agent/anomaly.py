@@ -69,13 +69,21 @@ _IOT_NEW_DEST_HIGH = 15
 def _thresholds_for_role(role: str) -> dict:
     if role == "iot":
         return {
-            "z_low": _IOT_Z_LOW, "z_med": _IOT_Z_MEDIUM, "z_high": _IOT_Z_HIGH,
-            "dest_warn": _IOT_NEW_DEST_WARN, "dest_high": _IOT_NEW_DEST_HIGH,
+            "z_low": _IOT_Z_LOW,
+            "z_med": _IOT_Z_MEDIUM,
+            "z_high": _IOT_Z_HIGH,
+            "dest_warn": _IOT_NEW_DEST_WARN,
+            "dest_high": _IOT_NEW_DEST_HIGH,
         }
     return {
-        "z_low": _Z_LOW, "z_med": _Z_MEDIUM, "z_high": _Z_HIGH,
-        "dest_warn": _NEW_DEST_WARN, "dest_high": _NEW_DEST_HIGH,
+        "z_low": _Z_LOW,
+        "z_med": _Z_MEDIUM,
+        "z_high": _Z_HIGH,
+        "dest_warn": _NEW_DEST_WARN,
+        "dest_high": _NEW_DEST_HIGH,
     }
+
+
 
 # Cooldown: seconds before the same alert type can fire again for the same device
 _ALERT_COOLDOWN_SECS = 3600
@@ -137,6 +145,7 @@ def _enforcement_for_severity(severity: str) -> dict | None:
         return {"state": "SOFT", "actor": "anomaly"}
     return None
 
+
 def _should_alert(severity: str, mac: str = "", alert_type: str = "") -> bool:
     """Only medium/high anomalies that aren't on cooldown generate user-facing alerts."""
     if severity not in {"medium", "high"}:
@@ -166,26 +175,32 @@ def _confidence_from_count(count: int, severity: str, thresholds: dict) -> float
         return min(0.65 + max(count - thresholds["dest_warn"], 0) * 0.03, 0.85)
     return 0.50
 
+
 def _route_to_detection(mac: str, severity: str, reason: str) -> None:
     """
     Send a normalized event into the central detection policy engine.
     Fail open: alert generation should continue even if policy routing fails.
     """
     try:
-        result = handle_event({
-            "device_id": mac,
-            "device_id_type": "mac",
-            "severity": severity,
-            "reason": reason,
-        })
+        result = handle_event(
+            {
+                "device_id": mac,
+                "device_id_type": "mac",
+                "severity": severity,
+                "reason": reason,
+            }
+        )
         logger.info(
             "Detection policy result for %s: %s",
             mac,
             result.get("result", {}).get("status", "unknown"),
         )
     except Exception:
-        logger.exception("Failed routing anomaly signal into detection engine for %s", mac)
-        
+        logger.exception(
+            "Failed routing anomaly signal into detection engine for %s", mac
+        )
+
+
 def _check_volume_spike(
     flow: dict, baseline: dict, mac: str, thresholds: dict
 ) -> list[dict]:
@@ -200,22 +215,23 @@ def _check_volume_spike(
     if severity:
         enforcement = _enforcement_for_severity(severity)
 
-        event = build_anomaly_detected(mac, {
-            "anomaly_type": "volume_spike",
-            "metric": "bytes_out",
-            "current_value": current,
-            "baseline_mean": round(mean, 1),
-            "baseline_stddev": round(stddev, 1),
-            "z_score": round(z, 2),
-        })
+        event = build_anomaly_detected(
+            mac,
+            {
+                "anomaly_type": "volume_spike",
+                "metric": "bytes_out",
+                "current_value": current,
+                "baseline_mean": round(mean, 1),
+                "baseline_stddev": round(stddev, 1),
+                "z_score": round(z, 2),
+            },
+        )
         enqueue_and_dispatch(event)
         events.append(event)
 
         if _should_alert(severity, mac, "volume_spike"):
             _route_to_detection(
-                mac,
-                severity,
-                f"volume_spike z={z:.2f} bytes_out={current}"
+                mac, severity, f"volume_spike z={z:.2f} bytes_out={current}"
             )
 
             alert = build_alert(
@@ -256,7 +272,10 @@ def _check_volume_spike(
 
         logger.info(
             "Volume spike detected for %s: %d bytes (z=%.1f, severity=%s)",
-            mac, current, z, severity,
+            mac,
+            current,
+            z,
+            severity,
         )
 
     return events
@@ -276,22 +295,23 @@ def _check_connection_spike(
     if severity:
         enforcement = _enforcement_for_severity(severity)
 
-        event = build_anomaly_detected(mac, {
-            "anomaly_type": "connection_spike",
-            "metric": "connections",
-            "current_value": current,
-            "baseline_mean": round(mean, 1),
-            "baseline_stddev": round(stddev, 1),
-            "z_score": round(z, 2),
-        })
+        event = build_anomaly_detected(
+            mac,
+            {
+                "anomaly_type": "connection_spike",
+                "metric": "connections",
+                "current_value": current,
+                "baseline_mean": round(mean, 1),
+                "baseline_stddev": round(stddev, 1),
+                "z_score": round(z, 2),
+            },
+        )
         enqueue_and_dispatch(event)
         events.append(event)
 
         if _should_alert(severity, mac, "connection_spike"):
             _route_to_detection(
-                mac,
-                severity,
-                f"connection_spike z={z:.2f} connections={current}"
+                mac, severity, f"connection_spike z={z:.2f} connections={current}"
             )
 
             alert = build_alert(
@@ -332,7 +352,10 @@ def _check_connection_spike(
 
         logger.info(
             "Connection spike detected for %s: %d conns (z=%.1f, severity=%s)",
-            mac, current, z, severity,
+            mac,
+            current,
+            z,
+            severity,
         )
 
     return events
@@ -368,19 +391,18 @@ def _check_unusual_destinations(
 
     enforcement = _enforcement_for_severity(severity)
 
-    _route_to_detection(
-        mac,
-        severity,
-        f"unusual_destinations count={count}"
-    )
+    _route_to_detection(mac, severity, f"unusual_destinations count={count}")
 
     sample_dests = sorted(new_dests)[:5]  # show up to 5 examples
 
-    event = build_anomaly_detected(mac, {
-        "anomaly_type": "unusual_destinations",
-        "new_destination_count": count,
-        "sample_destinations": sample_dests,
-    })
+    event = build_anomaly_detected(
+        mac,
+        {
+            "anomaly_type": "unusual_destinations",
+            "new_destination_count": count,
+            "sample_destinations": sample_dests,
+        },
+    )
     enqueue_and_dispatch(event)
 
     alert = build_alert(
@@ -420,7 +442,9 @@ def _check_unusual_destinations(
     events.extend([event, alert])
     logger.info(
         "Unusual destinations for %s: %d new IPs (severity=%s)",
-        mac, count, severity,
+        mac,
+        count,
+        severity,
     )
 
     return events
@@ -445,6 +469,7 @@ def check_for_anomalies(device_mac: str, current_flow: dict) -> list[dict]:
 
     thresholds = _thresholds_for_role(role)
 
+
     all_events: list[dict] = []
 
     # Phase 9A:
@@ -457,7 +482,8 @@ def check_for_anomalies(device_mac: str, current_flow: dict) -> list[dict]:
         if all_events:
             logger.info(
                 "Anomaly checks for %s: %d events/alerts generated (baseline learning; baseline-dependent checks skipped)",
-                device_mac, len(all_events),
+                device_mac,
+                len(all_events),
             )
         else:
             logger.debug(
@@ -470,17 +496,25 @@ def check_for_anomalies(device_mac: str, current_flow: dict) -> list[dict]:
     if not baseline:
         return all_events
 
-    all_events.extend(_check_volume_spike(current_flow, baseline, device_mac, thresholds))
-    all_events.extend(_check_connection_spike(current_flow, baseline, device_mac, thresholds))
-    all_events.extend(_check_unusual_destinations(current_flow, baseline, device_mac, thresholds))
+    all_events.extend(
+        _check_volume_spike(current_flow, baseline, device_mac, thresholds)
+    )
+    all_events.extend(
+        _check_connection_spike(current_flow, baseline, device_mac, thresholds)
+    )
+    all_events.extend(
+        _check_unusual_destinations(current_flow, baseline, device_mac, thresholds)
+    )
 
     if all_events:
         logger.info(
             "Anomaly checks for %s: %d events/alerts generated",
-            device_mac, len(all_events),
+            device_mac,
+            len(all_events),
         )
 
     return all_events
+
 
 def _is_private_ipv4(ip: str | None) -> bool:
     """Return True for RFC1918 IPv4 addresses. Keeps the first scan rule LAN-focused."""
@@ -582,7 +616,9 @@ def _check_scan_probe(flow: dict, mac: str) -> list[dict]:
     if _is_benign_gateway_service_mix(top_dest, top_ports):
         logger.debug(
             "Skipping scan probe for %s due to benign gateway service mix: dest=%s ports=%s",
-            mac, top_dest, top_ports,
+            mac,
+            top_dest,
+            top_ports,
         )
         return events
 
@@ -598,17 +634,20 @@ def _check_scan_probe(flow: dict, mac: str) -> list[dict]:
     severity = "medium"
     enforcement = _enforcement_for_severity(severity)
 
-    event = build_anomaly_detected(mac, {
-        "anomaly_type": "scan_probe",
-        "metric": "port_fanout_single_dest",
-        "current_value": max_ports_single_dest,
-        "top_dest_ip": top_dest,
-        "top_dest_connections": max_connections_single_dest,
-        "top_dest_ports": top_ports,
-        "device_total_connections": total_connections,
-        "device_unique_ports": unique_ports,
-        "scan_candidates": scan_candidates,
-    })
+    event = build_anomaly_detected(
+        mac,
+        {
+            "anomaly_type": "scan_probe",
+            "metric": "port_fanout_single_dest",
+            "current_value": max_ports_single_dest,
+            "top_dest_ip": top_dest,
+            "top_dest_connections": max_connections_single_dest,
+            "top_dest_ports": top_ports,
+            "device_total_connections": total_connections,
+            "device_unique_ports": unique_ports,
+            "scan_candidates": scan_candidates,
+        },
+    )
     enqueue_and_dispatch(event)
     events.append(event)
 

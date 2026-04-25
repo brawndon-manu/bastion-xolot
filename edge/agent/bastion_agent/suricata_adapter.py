@@ -100,7 +100,9 @@ def parse_eve_log(log_path: str = "/var/log/suricata/eve.json") -> list[dict]:
                 return events
 
             if _eve_log_offset > log_size:
-                logger.info("EVE log appears rotated or truncated; restarting at current end")
+                logger.info(
+                    "EVE log appears rotated or truncated; restarting at current end"
+                )
                 _eve_log_offset = log_size
                 return events
 

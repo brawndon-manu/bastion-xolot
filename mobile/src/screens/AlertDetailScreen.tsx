@@ -6,6 +6,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "../state/store";
 import { selectAlertById, loadAlerts, alertResolved } from "../state/slices/alertsSlice";
 import { selectDeviceById, selectNickname, loadDevices } from "../state/slices/devicesSlice";
+import { TranslationLevel } from "../state/slices/settingsSlice";
 import Icon from "react-native-vector-icons/Feather";
 import PlainEnglishPanel from "../components/PlainEnglishPanel";
 import { api } from "../api/client";
@@ -27,7 +28,11 @@ export default function AlertDetailScreen({ route }: Props) {
   const alert = useSelector((state: RootState) =>
     selectAlertById(state, route.params.alertId)
   );
+  const translationLevel = useSelector((state: RootState) =>
+    state.settings.translationLevel as TranslationLevel
+  );
   const [resolving, setResolving] = useState(false);
+  const [explanation, setExplanation] = useState<string | null>(null);
   const device = useSelector((state: RootState) =>
     alert ? selectDeviceById(state, alert.deviceId) : undefined
   );
@@ -42,6 +47,13 @@ export default function AlertDetailScreen({ route }: Props) {
   useEffect(() => {
     if (alert && !device) dispatch(loadDevices());
   }, [dispatch, alert, device]);
+
+  useEffect(() => {
+    if (!alert || alert.status === "resolved") return;
+    api.getAlertExplanation(alert.id, translationLevel)
+      .then(setExplanation)
+      .catch(() => setExplanation(null));
+  }, [alert?.id, alert?.status, translationLevel]);
 
   const onResolve = async () => {
     if (!alert || alert.status === "resolved") return;
@@ -132,7 +144,7 @@ export default function AlertDetailScreen({ route }: Props) {
           ].join("\n")}
         />
       )}
-      <PlainEnglishPanel text={alert.plainEnglish} />
+      <PlainEnglishPanel text={explanation ?? alert.plainEnglish} />
       <Section title="CORRELATION / SUPPORTING EVIDENCE" body={evidenceText} />
       <Section title="RECOMMENDED ACTION" body={recommendedAction} />
       <Section title="TIMESTAMP" body={new Date(alert.timestamp).toLocaleString()} />

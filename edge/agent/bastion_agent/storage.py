@@ -235,7 +235,6 @@ def get_pending_events(limit: int = 50) -> list[dict]:
     ).fetchall()
     return [{"id": row["id"], **json.loads(row["event_json"])} for row in rows]
 
-
 def purge_stale_queue_events() -> int:
     """
     Hard-delete dispatched and stale events older than EVENT_QUEUE_TTL_SECONDS.

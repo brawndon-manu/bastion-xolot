@@ -105,9 +105,9 @@ function recordAction(action: EnforcementAction): EnforcementAction {
 }
 
 /**
- * Quaratines a device (or simulates it in monitor-only mode)
- * 
- * Responsibilites:
+ * Quarantines a device (or simulates it in monitor-only mode)
+ *
+ * Responsibilities:
  *  - Validate device exists
  *  - Determine execution mode (active vs monitor_only)
  *  - Prevent duplicate quarantine
@@ -192,8 +192,8 @@ export function quarantineDevice(
 
 /**
  * Removes quarantine from a device
- * 
- * Responsibilites:
+ *
+ * Responsibilities:
  *  - Validate device exists
  *  - Check if device is actually quarantined
  *  - Respect monitor-only mode
