@@ -364,10 +364,20 @@ eventsRouter.post("/", async (req, res) => {
         const directAlert = normalizeEdgeAlertPayload(req.body);
         if (directAlert.alert) {
             const { device_id, title, explanation } = directAlert.alert;
+
+            // Edge alerts can carry a raw IP as device_id (e.g. dns_monitor uses client_ip).
+            // Resolve it to the stable device ID before touching the DB so the FK is satisfied.
+            const isIpId = /^\d{1,3}(\.\d{1,3}){3}$/.test(device_id);
+            const alertDevice = ensureDeviceExists({
+                id: device_id,
+                ip_address: isIpId ? device_id : undefined,
+            });
+            const resolvedDeviceId = alertDevice.id;
+
             const normalizedAlert = normalizeEdgeAlertForStorage(directAlert.alert);
-            const fingerprint = buildAlertFingerprint([device_id, "edge_alert", title]);
+            const fingerprint = buildAlertFingerprint([resolvedDeviceId, "edge_alert", title]);
             const dedupWindowMs = 24 * 60 * 60 * 1000; // 24 hours — same condition shouldn't stack up all day
-            const existing = findRecentActiveAlert(device_id, fingerprint, Date.now() - dedupWindowMs);
+            const existing = findRecentActiveAlert(resolvedDeviceId, fingerprint, Date.now() - dedupWindowMs);
 
             if (existing) {
                 const refreshed = refreshAlert(existing.id, {
@@ -381,7 +391,7 @@ eventsRouter.post("/", async (req, res) => {
             }
 
             const alert = createAlert({
-                device_id,
+                device_id: resolvedDeviceId,
                 type: "edge_alert",
                 severity: normalizedAlert.severity,
                 title,
